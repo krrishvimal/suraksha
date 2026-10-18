@@ -69,6 +69,7 @@ export async function GET(
       last_checkin_at: row.last_checkin_at,
       created_at: row.created_at,
       expires_at: row.expires_at,
+      server_time: new Date().toISOString(),
     });
   } catch (err) {
     console.error('GET status error:', err);
@@ -207,6 +208,7 @@ export async function PATCH(
       last_checkin_at: updatedRow.last_checkin_at,
       created_at: updatedRow.created_at,
       expires_at: updatedRow.expires_at,
+      server_time: new Date().toISOString(),
     });
   } catch (err) {
     console.error('PATCH status error:', err);

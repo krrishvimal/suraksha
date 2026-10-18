@@ -79,6 +79,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + DEFAULT_EXPIRY_HOURS * 60 * 60 * 1000);
 
+    const nowIso = now.toISOString();
+
     const { data, error } = await supabase
       .from('status_pages')
       .insert({
@@ -86,10 +88,10 @@ export async function POST(request: Request): Promise<NextResponse> {
         status: 'active',
         message: null,
         location_link: location_link || null,
-        last_checkin_at: now.toISOString(),
+        last_checkin_at: nowIso,
         expires_at: expiresAt.toISOString(),
       })
-      .select('id, status, created_at, expires_at')
+      .select('id, status, created_at, expires_at, last_checkin_at, location_link')
       .single();
 
     if (error || !data) {
@@ -108,6 +110,9 @@ export async function POST(request: Request): Promise<NextResponse> {
         status: row.status,
         created_at: row.created_at,
         expires_at: row.expires_at,
+        last_checkin_at: row.last_checkin_at || nowIso,
+        location_link: row.location_link || location_link || null,
+        server_time: new Date().toISOString(),
       },
       { status: 201 }
     );

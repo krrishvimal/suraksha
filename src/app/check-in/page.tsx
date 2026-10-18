@@ -37,6 +37,7 @@ interface StatusData {
   last_checkin_at: string;
   created_at: string;
   expires_at: string;
+  server_time?: string;
 }
 
 type CheckInStatus = 'safe' | 'need_help';
@@ -51,9 +52,10 @@ interface QueuedAction {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatTimeSince(isoDate: string): string {
-  const diff = Date.now() - new Date(isoDate).getTime();
-  if (diff < 0) return '0s';
+function formatTimeSince(isoDate: string, serverOffsetMs = 0): string {
+  const adjustedNow = Date.now() - serverOffsetMs;
+  const diff = adjustedNow - new Date(isoDate).getTime();
+  if (diff < 1000) return '0s';
 
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -70,8 +72,9 @@ function formatTimeSince(isoDate: string): string {
   return `${seconds}s`;
 }
 
-function formatTimeUntil(isoDate: string): string {
-  const diff = new Date(isoDate).getTime() - Date.now();
+function formatTimeUntil(isoDate: string, serverOffsetMs = 0): string {
+  const adjustedNow = Date.now() - serverOffsetMs;
+  const diff = new Date(isoDate).getTime() - adjustedNow;
   if (diff <= 0) return 'Expired';
 
   const hours = Math.floor(diff / (1000 * 60 * 60));
@@ -182,12 +185,15 @@ function CreateSession({ onCreated }: { onCreated: (data: StatusData) => void })
     triggerHaptic();
 
     try {
-      // Request starting GPS location immediately on user click
+      // Fast start: race GPS with 1.2s timeout so session creation is instantaneous!
+      // If GPS lock takes longer, session starts immediately and live journey tracker attaches GPS right after.
       let initialLocation: string | null = null;
       try {
-        initialLocation = await getLocationLink();
+        const gpsPromise = getLocationLink();
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200));
+        initialLocation = await Promise.race([gpsPromise, timeoutPromise]);
       } catch (locErr) {
-        console.warn('Initial GPS capture skipped or permission pending:', locErr);
+        console.warn('Initial GPS capture skipped or pending:', locErr);
       }
 
       const response = await fetch('/api/status', {
@@ -331,6 +337,22 @@ function ActiveSession({
   const [gpsError, setGpsError] = useState<string | null>(null);
   const hasOverduePingedRef = useRef(false);
 
+  // Server-time offset synchronization to eliminate device clock skew
+  const serverOffsetRef = useRef<number>(
+    initialData.server_time
+      ? Date.now() - new Date(initialData.server_time).getTime()
+      : 0
+  );
+
+  const syncServerOffset = useCallback((serverTimeStr?: string) => {
+    if (serverTimeStr) {
+      const serverMs = new Date(serverTimeStr).getTime();
+      if (!isNaN(serverMs)) {
+        serverOffsetRef.current = Date.now() - serverMs;
+      }
+    }
+  }, []);
+
   const queuedActionRef = useRef<QueuedAction | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -357,6 +379,10 @@ function ActiveSession({
           }),
         });
         if (res.ok) {
+          const data = await res.json();
+          if (data.server_time) {
+            syncServerOffset(data.server_time);
+          }
           setStatusData((prev) => ({ ...prev, location_link: link }));
           setLastGpsPingTime(
             new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -370,18 +396,19 @@ function ActiveSession({
     } finally {
       setIsPingingGps(false);
     }
-  }, [isJourneyTracking, isOnline, uuid, passcode]);
+  }, [isJourneyTracking, isOnline, uuid, passcode, syncServerOffset]);
 
   // Live time and countdown updater
   useEffect(() => {
     const update = () => {
       if (statusData.last_checkin_at) {
-        setTimeSinceCheckin(formatTimeSince(statusData.last_checkin_at));
+        setTimeSinceCheckin(formatTimeSince(statusData.last_checkin_at, serverOffsetRef.current));
 
-        // Dead Man's Switch countdown
+        // Dead Man's Switch countdown synchronized with server time
+        const adjustedNow = Date.now() - serverOffsetRef.current;
         const checkinDueAt =
           new Date(statusData.last_checkin_at).getTime() + intervalMinutes * 60 * 1000;
-        const diff = checkinDueAt - Date.now();
+        const diff = checkinDueAt - adjustedNow;
 
         if (diff <= 0) {
           const overdueSec = Math.floor(Math.abs(diff) / 1000);
@@ -414,7 +441,7 @@ function ActiveSession({
         }
       }
       if (statusData.expires_at) {
-        setExpiresIn(formatTimeUntil(statusData.expires_at));
+        setExpiresIn(formatTimeUntil(statusData.expires_at, serverOffsetRef.current));
       }
     };
 
@@ -474,6 +501,22 @@ function ActiveSession({
       setActionError(null);
       triggerHaptic();
 
+      // Optimistic instant feedback when tapping "I'm Safe"
+      if (status === 'safe') {
+        const nowIso = new Date(Date.now() - serverOffsetRef.current).toISOString();
+        setStatusData((prev) => ({
+          ...prev,
+          status: 'safe',
+          last_checkin_at: nowIso,
+        }));
+        setTimeSinceCheckin('0s');
+        setCountdownState({
+          text: `${intervalMinutes}m 00s`,
+          isOverdue: false,
+          isUrgent: false,
+        });
+      }
+
       // Automatically attach fresh GPS location on check-in
       let freshLoc: string | null = locationLink ?? null;
       if (!freshLoc) {
@@ -526,6 +569,10 @@ function ActiveSession({
 
         if (!res.ok) {
           throw new Error(data.error || 'Check-in failed');
+        }
+
+        if (data.server_time) {
+          syncServerOffset(data.server_time);
         }
 
         setStatusData(data);

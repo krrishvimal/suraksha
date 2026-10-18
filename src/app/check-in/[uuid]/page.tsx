@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import {
   Shield,
@@ -31,6 +31,7 @@ interface StatusPageData {
   last_checkin_at: string;
   created_at: string;
   expires_at: string;
+  server_time?: string;
 }
 
 type DisplayStatus = 'safe' | 'need_help' | 'stale' | 'unknown';
@@ -38,9 +39,10 @@ type PageState = 'loading' | 'loaded' | 'not_found' | 'error';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatTimeSince(isoDate: string): string {
-  const diff = Date.now() - new Date(isoDate).getTime();
-  if (diff < 0) return '0s';
+function formatTimeSince(isoDate: string, serverOffsetMs = 0): string {
+  const adjustedNow = Date.now() - serverOffsetMs;
+  const diff = adjustedNow - new Date(isoDate).getTime();
+  if (diff < 1000) return '0s';
 
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -53,8 +55,9 @@ function formatTimeSince(isoDate: string): string {
   return `${seconds}s`;
 }
 
-function formatTimeUntil(isoDate: string): string {
-  const diff = new Date(isoDate).getTime() - Date.now();
+function formatTimeUntil(isoDate: string, serverOffsetMs = 0): string {
+  const adjustedNow = Date.now() - serverOffsetMs;
+  const diff = new Date(isoDate).getTime() - adjustedNow;
   if (diff <= 0) return 'Expired';
 
   const hours = Math.floor(diff / (1000 * 60 * 60));
@@ -64,15 +67,20 @@ function formatTimeUntil(isoDate: string): string {
   return `${minutes}m`;
 }
 
-function getTimeSinceMs(isoDate: string): number {
-  return Date.now() - new Date(isoDate).getTime();
+function getTimeSinceMs(isoDate: string, serverOffsetMs = 0): number {
+  const adjustedNow = Date.now() - serverOffsetMs;
+  return Math.max(0, adjustedNow - new Date(isoDate).getTime());
 }
 
-function computeDisplayStatus(data: StatusPageData, intervalMinutes: number = 30): DisplayStatus {
+function computeDisplayStatus(
+  data: StatusPageData,
+  intervalMinutes: number = 30,
+  serverOffsetMs = 0
+): DisplayStatus {
   // If explicitly need_help, always trigger red emergency
   if (data.status === 'need_help') return 'need_help';
 
-  const timeSinceMs = getTimeSinceMs(data.last_checkin_at);
+  const timeSinceMs = getTimeSinceMs(data.last_checkin_at, serverOffsetMs);
   const dangerMs = intervalMinutes * 60 * 1000;
   const warningMs = dangerMs * 0.7; // Warning in final 30% of interval
 
@@ -217,6 +225,9 @@ function PublicStatusContent() {
   const [expiresIn, setExpiresIn] = useState('');
   const [displayStatus, setDisplayStatus] = useState<DisplayStatus>('unknown');
 
+  // Server-time offset synchronization to eliminate device clock skew
+  const serverOffsetRef = useRef<number>(0);
+
   const fetchStatus = useCallback(async () => {
     if (!uuid) {
       setPageState('not_found');
@@ -236,8 +247,14 @@ function PublicStatusContent() {
       }
 
       const result = await res.json();
+      if (result.server_time) {
+        const serverMs = new Date(result.server_time).getTime();
+        if (!isNaN(serverMs)) {
+          serverOffsetRef.current = Date.now() - serverMs;
+        }
+      }
       setData(result);
-      setDisplayStatus(computeDisplayStatus(result, intervalMinutes));
+      setDisplayStatus(computeDisplayStatus(result, intervalMinutes, serverOffsetRef.current));
       setPageState('loaded');
     } catch {
       if (pageState === 'loading') {
@@ -267,9 +284,9 @@ function PublicStatusContent() {
     if (!data) return;
 
     const update = () => {
-      setTimeSinceCheckin(formatTimeSince(data.last_checkin_at));
-      setExpiresIn(formatTimeUntil(data.expires_at));
-      setDisplayStatus(computeDisplayStatus(data, intervalMinutes));
+      setTimeSinceCheckin(formatTimeSince(data.last_checkin_at, serverOffsetRef.current));
+      setExpiresIn(formatTimeUntil(data.expires_at, serverOffsetRef.current));
+      setDisplayStatus(computeDisplayStatus(data, intervalMinutes, serverOffsetRef.current));
     };
 
     update();
