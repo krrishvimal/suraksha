@@ -187,12 +187,12 @@ function CreateSession({ onCreated }: { onCreated: (data: StatusData) => void })
 
     try {
       // Fast start: race GPS with 1.2s timeout so session creation is instantaneous!
-      // If GPS lock takes longer, session starts immediately and live journey tracker attaches GPS right after.
       let initialLocation: string | null = null;
+      let pendingGpsPromise: Promise<string> | null = null;
       try {
-        const gpsPromise = getLocationLink();
+        pendingGpsPromise = getLocationLink();
         const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200));
-        initialLocation = await Promise.race([gpsPromise, timeoutPromise]);
+        initialLocation = await Promise.race([pendingGpsPromise, timeoutPromise]);
       } catch (locErr) {
         console.warn('Initial GPS capture skipped or pending:', locErr);
       }
@@ -212,6 +212,25 @@ function CreateSession({ onCreated }: { onCreated: (data: StatusData) => void })
       // Save to localStorage
       setItem(StorageKeys.CHECKIN_UUID, data.id);
       setItem(StorageKeys.CHECKIN_PASSCODE, passcode);
+
+      // Fix 2: If user took longer to tap "Allow" on popup, auto-attach location as soon as it resolves
+      if (!initialLocation && pendingGpsPromise) {
+        pendingGpsPromise
+          .then(async (resolvedLink) => {
+            if (resolvedLink) {
+              await fetch(`/api/status/${data.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  passcode,
+                  location_link: resolvedLink,
+                  update_checkin: false,
+                }),
+              }).catch(() => {});
+            }
+          })
+          .catch(() => {});
+      }
 
       onCreated(data as StatusData);
     } catch (err) {
@@ -751,6 +770,39 @@ function ActiveSession({
           accentColor="emerald"
           defaultExpanded={false}
         />
+
+        {/* Prominent GPS Banner if location is not linked yet */}
+        {!statusData.location_link && (
+          <div className="rounded-2xl border border-sky-500/30 bg-sky-950/30 p-3.5 flex items-center justify-between gap-3 shadow-sm animate-in fade-in duration-200">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
+                <Navigation className={`w-4 h-4 ${isPingingGps ? 'animate-spin' : ''}`} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs sm:text-sm font-bold text-white truncate">
+                  {t('locationNotLinked', 'GPS लोकेशन अभी नहीं जुड़ी है', 'GPS Location Not Linked Yet')}
+                </p>
+                <p className="text-[11px] text-sky-300/70 truncate">
+                  {t('shareWithFamilyPrompt', 'परिवार को मैप दिखाने के लिए जोड़ें', 'Add your GPS to the family map')}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => pingLocation()}
+              disabled={isPingingGps}
+              className="shrink-0 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-semibold text-xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              aria-label={t('shareNow', 'अभी जोड़ें', 'Share GPS')}
+            >
+              <MapPin className="w-3.5 h-3.5" />
+              <span>
+                {isPingingGps
+                  ? t('gettingGps', 'खोज रहे हैं...', 'Locating...')
+                  : t('shareNow', 'अभी जोड़ें', 'Share GPS')}
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* Dead Man's Switch Urgency / Overdue Banner */}
         {countdownState.isOverdue && (
