@@ -122,23 +122,26 @@ export default function QRCardPage() {
     try {
       const QRCode = (await import('qrcode')).default;
 
-      // Build compact QR payload
+      // Build clean human-readable emergency text payload
       const filteredContacts = data.emergencyContacts.filter((c) => c.trim().length > 0);
-      const qrPayload = JSON.stringify({
-        n: data.name.trim(),
-        bg: data.bloodGroup || '-',
-        ec: filteredContacts.length > 0 ? filteredContacts : ['-'],
-        al: data.allergies.trim() || 'None',
-        med: data.medicalConditions.trim() || 'None',
-        v: 1,
-      });
+      const contactsText = filteredContacts.length > 0 ? filteredContacts.join(', ') : 'None';
+
+      const qrPayload = [
+        '🚨 EMERGENCY ID | आपातकालीन पहचान',
+        `👤 Name: ${data.name.trim()}`,
+        `🩸 Blood Group: ${data.bloodGroup || 'Not specified'}`,
+        `📞 Emergency Contact: ${contactsText}`,
+        `⚠️ Allergies: ${data.allergies.trim() || 'None'}`,
+        `🏥 Medical Conditions: ${data.medicalConditions.trim() || 'None'}`,
+        '— Suraksha Safety App'
+      ].join('\n');
 
       const url = await QRCode.toDataURL(qrPayload, {
-        width: 300,
+        width: 320,
         margin: 2,
         color: {
-          dark: '#FFFFFF',
-          light: '#0A0A0A',
+          dark: '#0A0A0A',
+          light: '#FFFFFF',
         },
         errorCorrectionLevel: 'M',
       });
@@ -458,35 +461,49 @@ export default function QRCardPage() {
             </div>
 
             <div className="flex flex-col items-center p-6">
-              {/* QR Image */}
-              <div className="rounded-2xl border border-white/10 bg-[#0A0A0A] p-4">
+              {/* QR Image with clean white card for maximum scanner compatibility */}
+              <div className="rounded-2xl border-4 border-emerald-500/30 bg-white p-3 shadow-2xl shadow-emerald-500/10">
                 <img
                   src={qrDataUrl}
                   alt={t('emergency_qr_code', 'Emergency QR Code / आपातकालीन QR कोड')}
-                  className="h-[250px] w-[250px]"
-                  width={250}
-                  height={250}
+                  className="h-[240px] w-[240px] rounded-lg"
+                  width={240}
+                  height={240}
                 />
               </div>
 
               {/* Card info preview */}
-              <div className="mt-4 w-full space-y-1.5 rounded-xl bg-white/5 p-3">
+              <div className="mt-4 w-full space-y-2 rounded-xl bg-white/5 p-3.5 border border-white/5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-white/40">{t('name_label', 'Name / नाम')}</span>
-                  <span className="font-medium text-white/80">{formData.name}</span>
+                  <span className="font-semibold text-white/90">{formData.name}</span>
                 </div>
                 {formData.bloodGroup && (
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-white/40">{t('blood_label', 'Blood / रक्त')}</span>
-                    <span className="rounded bg-red-500/20 px-1.5 py-0.5 font-bold text-red-400">
+                    <span className="rounded bg-red-500/20 px-2 py-0.5 font-bold text-red-400">
                       {formData.bloodGroup}
+                    </span>
+                  </div>
+                )}
+                {formData.emergencyContacts.some((c) => c.trim()) && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-white/40">{t('emergency_contacts', 'Contacts / संपर्क')}</span>
+                    <span className="font-mono text-emerald-400">
+                      {formData.emergencyContacts.filter((c) => c.trim()).join(', ')}
                     </span>
                   </div>
                 )}
                 {formData.allergies && (
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-white/40">{t('allergies_label', 'Allergies / एलर्जी')}</span>
-                    <span className="text-amber-400/80">{formData.allergies}</span>
+                    <span className="text-amber-400/90">{formData.allergies}</span>
+                  </div>
+                )}
+                {formData.medicalConditions && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-white/40">{t('medical_conditions', 'Conditions / स्थितियां')}</span>
+                    <span className="text-purple-400/90">{formData.medicalConditions}</span>
                   </div>
                 )}
               </div>
