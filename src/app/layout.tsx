@@ -7,6 +7,7 @@ import { LanguageProvider } from '@/lib/i18n';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
+import AppSplash from '@/components/AppSplash';
 
 // ---------------------------------------------------------------------------
 // Fonts
@@ -72,6 +73,7 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
 
           <Footer />
           <ServiceWorkerRegister />
+          <AppSplash />
         </LanguageProvider>
       </body>
     </html>

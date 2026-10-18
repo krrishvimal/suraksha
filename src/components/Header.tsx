@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n';
 import { APP_NAME, NAV_LINKS } from '@/lib/constants';
+import SurakshaLogo from '@/components/SurakshaLogo';
 
 // ---------------------------------------------------------------------------
 // Nav icon mapping
@@ -41,13 +42,10 @@ export default function Header() {
       <div className="mx-auto flex max-w-md items-center justify-between px-4 py-3">
         <Link
           href="/"
-          className="flex items-center gap-2 transition-opacity hover:opacity-80"
+          className="flex items-center transition-opacity hover:opacity-85"
           aria-label={t('Go to Suraksha home', 'सुरक्षा होम पर जाएं')}
         >
-          <Shield className="h-7 w-7 text-safe" aria-hidden="true" />
-          <span className="text-lg font-bold tracking-tight text-safe">
-            {APP_NAME}
-          </span>
+          <SurakshaLogo size="sm" />
         </Link>
 
         <button

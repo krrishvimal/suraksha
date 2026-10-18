@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n';
 import { APP_NAME } from '@/lib/constants';
+import SurakshaLogo from '@/components/SurakshaLogo';
 
 // ---------------------------------------------------------------------------
 // Feature card data
@@ -92,12 +93,12 @@ export default function HomePage() {
           />
         </div>
 
-        <h1 className="text-4xl font-bold tracking-tight text-foreground">
-          {APP_NAME}
-        </h1>
+        <div className="flex flex-col items-center">
+          <SurakshaLogo size="lg" variant="inline" showShield={false} />
+        </div>
 
-        <p className="text-lg text-muted">
-          {t('Your Personal Safety Tool', 'आपका व्यक्तिगत सुरक्षा उपकरण')}
+        <p className="text-base sm:text-lg text-neutral-300 font-medium">
+          {t('Your Personal Safety Tool • 100% Private', 'आपका व्यक्तिगत सुरक्षा कवच • 100% निजी')}
         </p>
 
         {/* Privacy badge */}
