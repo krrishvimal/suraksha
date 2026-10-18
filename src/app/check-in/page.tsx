@@ -395,6 +395,7 @@ function ActiveSession({
   const [lastGpsPingTime, setLastGpsPingTime] = useState<string | null>(null);
   const [isPingingGps, setIsPingingGps] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
+  const [hasAttemptedFirstGps, setHasAttemptedFirstGps] = useState(Boolean(initialData.location_link));
   const hasOverduePingedRef = useRef(false);
 
   // Server-time offset synchronization to eliminate device clock skew
@@ -455,6 +456,7 @@ function ActiveSession({
       setGpsError(msg);
     } finally {
       setIsPingingGps(false);
+      setHasAttemptedFirstGps(true);
     }
   }, [isJourneyTracking, isOnline, uuid, passcode, syncServerOffset]);
 
@@ -771,8 +773,8 @@ function ActiveSession({
           defaultExpanded={false}
         />
 
-        {/* Prominent GPS Banner if location is not linked yet */}
-        {!statusData.location_link && (
+        {/* Prominent GPS Banner if location is genuinely missing after initial attempt */}
+        {!statusData.location_link && !isPingingGps && hasAttemptedFirstGps && (
           <div className="rounded-2xl border border-sky-500/30 bg-sky-950/30 p-3.5 flex items-center justify-between gap-3 shadow-sm animate-in fade-in duration-200">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
