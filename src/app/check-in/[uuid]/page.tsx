@@ -209,7 +209,7 @@ function PublicStatusContent() {
   const uuid = typeof params?.uuid === 'string' ? params.uuid : '';
 
   const intervalParam = searchParams.get('interval') || searchParams.get('t');
-  const intervalMinutes = intervalParam ? parseInt(intervalParam, 10) || 30 : 30;
+  const intervalMinutes = intervalParam ? parseInt(intervalParam, 10) || 1 : 1;
 
   const [pageState, setPageState] = useState<PageState>('loading');
   const [data, setData] = useState<StatusPageData | null>(null);
@@ -251,13 +251,13 @@ function PublicStatusContent() {
     fetchStatus();
   }, [fetchStatus]);
 
-  // Polling every 10 seconds
+  // Polling every 5 seconds for rapid status updates
   useEffect(() => {
     if (pageState !== 'loaded') return;
 
     const interval = setInterval(() => {
       fetchStatus();
-    }, 10000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [pageState, fetchStatus]);

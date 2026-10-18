@@ -302,7 +302,7 @@ function ActiveSession({
   // Dead Man's Switch: Safety Interval (in minutes)
   const [intervalMinutes, setIntervalMinutes] = useState<number>(() => {
     const saved = getItem<number>(StorageKeys.CHECKIN_INTERVAL);
-    return saved && [15, 30, 60].includes(saved) ? saved : 15;
+    return saved && [1, 15, 30, 60].includes(saved) ? saved : 1;
   });
 
   // Countdown to next check-in
@@ -356,10 +356,11 @@ function ActiveSession({
           const sec = Math.floor(diff / 1000);
           const min = Math.floor(sec / 60);
           const remSec = sec % 60;
+          const isUrgent = diff <= Math.min(3 * 60 * 1000, intervalMinutes * 60 * 1000 * 0.35);
           setCountdownState({
             text: `${min}m ${remSec < 10 ? '0' : ''}${remSec}s`,
             isOverdue: false,
-            isUrgent: diff <= 3 * 60 * 1000, // < 3 mins
+            isUrgent,
           });
         }
       }
@@ -671,9 +672,10 @@ function ActiveSession({
               'If you fail to check in within this time, the system automatically triggers a red emergency alarm with your last GPS location.'
             )}
           </p>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-1.5">
             {[
-              { val: 15, label: t('timer15', '15 मिनट\n(कैब/अकेले)', '15 mins\n(Cab/Night)') },
+              { val: 1, label: t('timer1', '1 मिनट\n(टेस्ट)', '1 min\n(Test)') },
+              { val: 15, label: t('timer15', '15 मिनट\n(कैब)', '15 mins\n(Cab)') },
               { val: 30, label: t('timer30', '30 मिनट\n(सफ़र)', '30 mins\n(Commute)') },
               { val: 60, label: t('timer60', '60 मिनट\n(सामान्य)', '60 mins\n(Standard)') },
             ].map(({ val, label }) => (
