@@ -587,7 +587,6 @@ export default function QRCardPage() {
 
         {/* About & How to Use Guide at the Top */}
         <FeatureGuide
-          badge={t('guide_qr_badge', 'Lock Screen Emergency ID / लॉक स्क्रीन आपातकालीन ID')}
           title={t('guide_qr_title', 'About & How to Use / जानकारी और उपयोग विधि')}
           aboutText={t(
             'guide_qr_about',
@@ -621,7 +620,7 @@ export default function QRCardPage() {
             'Lifesaver Tip: In road accidents or panic situations, paramedics and police always check the phone lock screen first. Having this wallpaper saves critical minutes without needing your phone password.'
           )}
           accentColor="blue"
-          defaultExpanded={true}
+          defaultExpanded={false}
         />
 
         {/* Success toast */}

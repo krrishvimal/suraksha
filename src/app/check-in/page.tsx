@@ -236,7 +236,6 @@ function CreateSession({ onCreated }: { onCreated: (data: StatusData) => void })
         {/* About & How to Use Guide at the Top */}
         <div className="w-full">
           <FeatureGuide
-            badge={t('guide_checkin_badge', 'Automated Safety Guard / स्वचालित सुरक्षा गार्ड')}
             title={t('guide_checkin_title', 'About & How to Use / जानकारी और उपयोग विधि')}
             aboutText={t(
               'guide_checkin_about',
@@ -270,7 +269,7 @@ function CreateSession({ onCreated }: { onCreated: (data: StatusData) => void })
               'Lifesaver Tip: Keep "Auto GPS Breadcrumbs" turned ON so your family can see your vehicle travel route updated in the background without you having to open the app.'
             )}
             accentColor="emerald"
-            defaultExpanded={true}
+            defaultExpanded={false}
           />
         </div>
 
@@ -717,7 +716,6 @@ function ActiveSession({
       <div className="flex-1 px-4 py-6 max-w-lg mx-auto w-full space-y-4">
         {/* Feature Guide (collapsed by default during active session to keep controls prominent) */}
         <FeatureGuide
-          badge={t('guide_checkin_badge', 'Live Safety Check-In / सुरक्षा चेक-इन')}
           title={t('guide_checkin_title', 'About & How to Use / जानकारी और उपयोग विधि')}
           aboutText={t(
             'guide_checkin_active_about',

@@ -16,8 +16,9 @@ export interface GuideStep {
 }
 
 interface FeatureGuideProps {
-  badge: string;
+  badge?: string;
   title: string;
+  subtitle?: string;
   aboutText: string;
   steps: GuideStep[];
   proTip?: string;
@@ -26,13 +27,13 @@ interface FeatureGuideProps {
 }
 
 export default function FeatureGuide({
-  badge,
   title,
+  subtitle,
   aboutText,
   steps,
   proTip,
   accentColor = 'blue',
-  defaultExpanded = true,
+  defaultExpanded = false,
 }: FeatureGuideProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
@@ -71,31 +72,27 @@ export default function FeatureGuide({
       <button
         type="button"
         onClick={() => setIsExpanded((prev) => !prev)}
-        className="w-full flex items-center justify-between p-4 text-left transition-colors hover:bg-white/[0.02] focus:outline-none"
+        className="w-full flex items-center justify-between p-3.5 text-left transition-colors hover:bg-white/[0.03] active:bg-white/[0.05] focus:outline-none"
         aria-expanded={isExpanded}
       >
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white">
             <BookOpen className="h-4 w-4" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-block rounded-md border px-2 py-0.5 text-[10.5px] font-bold tracking-wide uppercase ${colorStyles.badgeBg}`}
-              >
-                {badge}
-              </span>
-            </div>
-            <h2 className="text-sm font-bold text-white mt-0.5">{title}</h2>
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-white truncate">{title}</h2>
+            <p className="text-[11px] text-white/50 truncate">
+              {subtitle || (isExpanded ? 'Tap to hide / बंद करने के लिए टैप करें' : 'Tap to see instructions / उपयोग विधि देखने के लिए टैप करें')}
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs text-white/50 pl-2">
-          <span>{isExpanded ? 'Hide / बंद करें' : 'How to use / कैसे उपयोग करें'}</span>
+        <div className="flex items-center gap-1.5 text-xs text-white/60 shrink-0 pl-2 font-medium">
+          <span>{isExpanded ? 'Hide / बंद करें' : 'Open / खोलें'}</span>
           {isExpanded ? (
-            <ChevronUp className="h-4 w-4 text-white/70" />
+            <ChevronUp className="h-4 w-4 text-white/80" />
           ) : (
-            <ChevronDown className="h-4 w-4 text-white/70" />
+            <ChevronDown className="h-4 w-4 text-white/80" />
           )}
         </div>
       </button>

@@ -359,7 +359,6 @@ export default function SOSPage() {
 
         {/* About & How to Use Guide at the Top */}
         <FeatureGuide
-          badge={t('guide_sos_badge', 'Rapid Emergency Broadcast / त्वरित आपातकालीन संदेश')}
           title={t('guide_sos_title', 'About & How to Use / जानकारी और उपयोग विधि')}
           aboutText={t(
             'guide_sos_about',
@@ -393,7 +392,7 @@ export default function SOSPage() {
             'Lifesaver Tip: Add emergency helpline numbers (e.g. 112, 1091 Women Helpline, or a local lawyer) as contacts if attending protests or travelling alone late at night.'
           )}
           accentColor="red"
-          defaultExpanded={true}
+          defaultExpanded={false}
         />
 
         {/* ===== CONTACTS SECTION ===== */}
