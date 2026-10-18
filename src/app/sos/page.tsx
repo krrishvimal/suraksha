@@ -26,6 +26,7 @@ import ContactManager, {
   isValidContact,
   getFormattedPhone,
 } from '@/components/ContactManager';
+import FeatureGuide from '@/components/FeatureGuide';
 import Link from 'next/link';
 
 // ------- Types -------
@@ -355,6 +356,45 @@ export default function SOSPage() {
             )}
           </p>
         </div>
+
+        {/* About & How to Use Guide at the Top */}
+        <FeatureGuide
+          badge={t('guide_sos_badge', 'Rapid Emergency Broadcast / त्वरित आपातकालीन संदेश')}
+          title={t('guide_sos_title', 'About & How to Use / जानकारी और उपयोग विधि')}
+          aboutText={t(
+            'guide_sos_about',
+            'One-Tap SOS lets you instantly broadcast emergency alert messages with your live GPS location to your trusted contacts via WhatsApp or SMS. It requires zero server setup, works directly through your phone\'s native messaging apps, and automatically attaches your medical/blood group info in medical emergencies.'
+          )}
+          steps={[
+            {
+              title: t('guide_sos_step1_title', 'Save Trusted Contacts / विश्वसनीय संपर्क जोड़ें'),
+              desc: t(
+                'guide_sos_step1_desc',
+                'Add up to 5 emergency contacts (family, close friends, or local authorities) with their WhatsApp/phone numbers.'
+              ),
+            },
+            {
+              title: t('guide_sos_step2_title', 'Select Situation Alert / स्थिति चुनें'),
+              desc: t(
+                'guide_sos_step2_desc',
+                'In an emergency, tap the relevant situation button (Need Help, Detained, Medical Emergency, Share Location, or I\'m Safe).'
+              ),
+            },
+            {
+              title: t('guide_sos_step3_title', 'Dispatch via WhatsApp or SMS / 1-टैप में भेजें'),
+              desc: t(
+                'guide_sos_step3_desc',
+                'Your real-time GPS Google Maps pin is fetched and inserted into pre-formatted text. Tap WhatsApp or SMS to send instantly!'
+              ),
+            },
+          ]}
+          proTip={t(
+            'guide_sos_tip',
+            'Lifesaver Tip: Add emergency helpline numbers (e.g. 112, 1091 Women Helpline, or a local lawyer) as contacts if attending protests or travelling alone late at night.'
+          )}
+          accentColor="red"
+          defaultExpanded={true}
+        />
 
         {/* ===== CONTACTS SECTION ===== */}
         <section>

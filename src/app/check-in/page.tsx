@@ -26,6 +26,7 @@ import { getItem, setItem, removeItem, StorageKeys } from '@/lib/storage';
 import { getLocationLink } from '@/lib/geolocation';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import StatusBadge from '@/components/StatusBadge';
+import FeatureGuide from '@/components/FeatureGuide';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -231,16 +232,57 @@ function CreateSession({ onCreated }: { onCreated: (data: StatusData) => void })
         </div>
       )}
 
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-8 max-w-lg mx-auto w-full space-y-6">
+        {/* About & How to Use Guide at the Top */}
+        <div className="w-full">
+          <FeatureGuide
+            badge={t('guide_checkin_badge', 'Automated Safety Guard / स्वचालित सुरक्षा गार्ड')}
+            title={t('guide_checkin_title', 'About & How to Use / जानकारी और उपयोग विधि')}
+            aboutText={t(
+              'guide_checkin_about',
+              'Safety Check-In is an automated "Dead Man\'s Switch" guard designed for high-risk situations (late-night cabs, walking alone, commuting, or protests). You share a live monitoring link with your loved ones. As long as you tap "I\'m Safe" periodically, your family sees that you are fine. If you are ever attacked, phone snatched, or incapacitated and miss the timer, the link automatically sounds an emergency alarm and reveals your last recorded GPS coordinates!'
+            )}
+            steps={[
+              {
+                title: t('guide_checkin_step1_title', 'Set 4-Digit PIN / 4-अंकों का पिन सेट करें'),
+                desc: t(
+                  'guide_checkin_step1_desc',
+                  'Enter a simple 4-digit PIN below and tap "Create Check-In" to start your safety session.'
+                ),
+              },
+              {
+                title: t('guide_checkin_step2_title', 'Share Link with Family / परिवार को लिंक भेजें'),
+                desc: t(
+                  'guide_checkin_step2_desc',
+                  'Share your live link via WhatsApp. Your family can watch your live status and GPS route on any phone without installing any app.'
+                ),
+              },
+              {
+                title: t('guide_checkin_step3_title', 'Tap "I\'m Safe" on Time / समय पर "मैं सुरक्षित हूँ" दबाएं'),
+                desc: t(
+                  'guide_checkin_step3_desc',
+                  'Tap the green "I\'m Safe" button before the countdown ends. If you miss the deadline, your family is alerted immediately with your location!'
+                ),
+              },
+            ]}
+            proTip={t(
+              'guide_checkin_tip',
+              'Lifesaver Tip: Keep "Auto GPS Breadcrumbs" turned ON so your family can see your vehicle travel route updated in the background without you having to open the app.'
+            )}
+            accentColor="emerald"
+            defaultExpanded={true}
+          />
+        </div>
+
         {/* Header */}
-        <div className="text-center mb-10">
-          <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Shield className="w-10 h-10 text-emerald-500" />
+        <div className="text-center">
+          <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-8 h-8 text-emerald-500" />
           </div>
-          <h1 className="text-2xl font-bold mb-2">
+          <h1 className="text-2xl font-bold mb-1.5">
             {t('createCheckin', 'सुरक्षा चेक-इन बनाएं', 'Create Safety Check-In')}
           </h1>
-          <p className="text-neutral-400 text-base max-w-sm">
+          <p className="text-neutral-400 text-sm max-w-sm mx-auto">
             {t(
               'createCheckinDesc',
               'एक 4-अंकों का पासकोड सेट करें। आप इसे अपने प्रियजनों के साथ साझा कर सकते हैं।',
@@ -672,7 +714,46 @@ function ActiveSession({
         </div>
       )}
 
-      <div className="flex-1 px-4 py-6 max-w-lg mx-auto w-full">
+      <div className="flex-1 px-4 py-6 max-w-lg mx-auto w-full space-y-4">
+        {/* Feature Guide (collapsed by default during active session to keep controls prominent) */}
+        <FeatureGuide
+          badge={t('guide_checkin_badge', 'Live Safety Check-In / सुरक्षा चेक-इन')}
+          title={t('guide_checkin_title', 'About & How to Use / जानकारी और उपयोग विधि')}
+          aboutText={t(
+            'guide_checkin_active_about',
+            'Your safety session is currently ACTIVE. As long as you tap "I\'m Safe" before the countdown expires, your family knows you are fine. If you miss a check-in (e.g. phone taken, injured, or unreachable), an emergency alert is triggered automatically on your contacts\' status page with your last GPS breadcrumb.'
+          )}
+          steps={[
+            {
+              title: t('guide_checkin_step1_title', 'Keep Timer in Mind / टाइमर पर ध्यान दें'),
+              desc: t(
+                'guide_checkin_active_step1_desc',
+                'Watch the countdown timer. Whenever prompted, tap the large green "I\'m Safe" button to reset the timer.'
+              ),
+            },
+            {
+              title: t('guide_checkin_step2_title', 'Tap "Need Help" for Emergency / आपातकाल में सहायता मांगें'),
+              desc: t(
+                'guide_checkin_active_step2_desc',
+                'If you face an immediate crisis, tap "Need Help" to immediately broadcast a red alert with your exact coordinates.'
+              ),
+            },
+            {
+              title: t('guide_checkin_step3_title', 'End Session When Safe / सुरक्षित पहुँचने पर समाप्त करें'),
+              desc: t(
+                'guide_checkin_active_step3_desc',
+                'When you arrive safely at your destination, scroll down and tap "End Session" with your PIN to close the page.'
+              ),
+            },
+          ]}
+          proTip={t(
+            'guide_checkin_tip',
+            'Lifesaver Tip: Keep "Auto GPS Breadcrumbs" turned ON so your family can see your vehicle travel route updated in the background without you having to open the app.'
+          )}
+          accentColor="emerald"
+          defaultExpanded={false}
+        />
+
         {/* Dead Man's Switch Urgency / Overdue Banner */}
         {countdownState.isOverdue && (
           <div className="mb-6 bg-red-600/20 border-2 border-red-500 rounded-2xl p-4 text-center animate-pulse">

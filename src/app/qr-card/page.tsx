@@ -25,6 +25,7 @@ import {
 import { useLanguage } from '@/lib/i18n';
 import { getItem, setItem, StorageKeys } from '@/lib/storage';
 import Link from 'next/link';
+import FeatureGuide from '@/components/FeatureGuide';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
 type BloodGroup = (typeof BLOOD_GROUPS)[number] | '';
@@ -584,6 +585,45 @@ export default function QRCardPage() {
           </p>
         </div>
 
+        {/* About & How to Use Guide at the Top */}
+        <FeatureGuide
+          badge={t('guide_qr_badge', 'Lock Screen Emergency ID / लॉक स्क्रीन आपातकालीन ID')}
+          title={t('guide_qr_title', 'About & How to Use / जानकारी और उपयोग विधि')}
+          aboutText={t(
+            'guide_qr_about',
+            'This card creates a high-visibility emergency badge for your phone lock screen wallpaper or wallet. In any accident, medical crisis, or emergency, first responders and bystanders can see your name and point their phone camera at the QR code to call your emergency contacts in 1 tap — even if your phone is locked or snatched!'
+          )}
+          steps={[
+            {
+              title: t('guide_qr_step1_title', 'Enter Your Info / जानकारी भरें'),
+              desc: t(
+                'guide_qr_step1_desc',
+                'Add your full name, trusted emergency contact numbers, and any critical instructions (e.g. allergies or medical notes).'
+              ),
+            },
+            {
+              title: t('guide_qr_step2_title', 'Select Privacy Mode / गोपनीयता मोड चुनें'),
+              desc: t(
+                'guide_qr_step2_desc',
+                'Keep "Privacy Mode" enabled so your phone numbers stay protected inside the QR code (preventing strangers on the metro from stealing your number).'
+              ),
+            },
+            {
+              title: t('guide_qr_step3_title', 'Download & Set as Wallpaper / लॉक स्क्रीन पर लगाएं'),
+              desc: t(
+                'guide_qr_step3_desc',
+                'Download the badge as a PNG image and set it as your phone lock screen wallpaper, or print a copy for your wallet, purse, or student bag.'
+              ),
+            },
+          ]}
+          proTip={t(
+            'guide_qr_tip',
+            'Lifesaver Tip: In road accidents or panic situations, paramedics and police always check the phone lock screen first. Having this wallpaper saves critical minutes without needing your phone password.'
+          )}
+          accentColor="blue"
+          defaultExpanded={true}
+        />
+
         {/* Success toast */}
         {showSuccess && (
           <div
@@ -913,26 +953,7 @@ export default function QRCardPage() {
           </section>
         )}
 
-        {/* Instructions */}
-        <section className="rounded-xl border border-white/10 bg-white/5 p-4">
-          <h3 className="mb-2 text-sm font-semibold text-white/70">
-            {t('how_to_use', 'How to use / कैसे उपयोग करें')}
-          </h3>
-          <ol className="space-y-1.5 text-xs leading-relaxed text-white/50">
-            <li>
-              1. {t('step_1', 'Fill in your emergency details and contacts above / ऊपर अपनी आपातकालीन जानकारी भरें')}
-            </li>
-            <li>
-              2. {t('step_2', 'Choose Privacy Mode (recommended for lockscreen) or Open Badge / मोड चुनें')}
-            </li>
-            <li>
-              3. {t('step_3', 'Tap "Save & Generate Emergency ID Badge" / बैज बनाएं दबाएं')}
-            </li>
-            <li>
-              4. {t('step_4', 'Download and set as Phone Lock Screen Wallpaper or print for wallet / डाउनलोड करके लॉक स्क्रीन पर लगाएं')}
-            </li>
-          </ol>
-        </section>
+
       </div>
     </main>
   );
