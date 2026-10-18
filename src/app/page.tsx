@@ -1,69 +1,182 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import Link from 'next/link';
+import {
+  Shield,
+  CreditCard,
+  HeartPulse,
+  MessageCircleWarning,
+  ArrowRight,
+  Lock,
+} from 'lucide-react';
+import { useLanguage } from '@/lib/i18n';
+import { APP_NAME } from '@/lib/constants';
+
+// ---------------------------------------------------------------------------
+// Feature card data
+// ---------------------------------------------------------------------------
+
+interface Feature {
+  href: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  titleEn: string;
+  titleHi: string;
+  descEn: string;
+  descHi: string;
+  emoji: string;
+  glowColor: string;
+}
+
+const FEATURES: Feature[] = [
+  {
+    href: '/qr-card',
+    icon: CreditCard,
+    emoji: '🪪',
+    titleEn: 'Emergency ID Card',
+    titleHi: 'आपातकालीन ID कार्ड',
+    descEn: 'Carry your emergency info as a QR code',
+    descHi: 'अपनी आपातकालीन जानकारी QR कोड के रूप में रखें',
+    glowColor: 'rgba(59, 130, 246, 0.15)',
+  },
+  {
+    href: '/check-in',
+    icon: HeartPulse,
+    emoji: '✅',
+    titleEn: "I'm Safe Check-In",
+    titleHi: 'मैं सुरक्षित हूँ चेक-इन',
+    descEn: "Let loved ones know you're okay",
+    descHi: 'अपनों को बताएं कि आप सुरक्षित हैं',
+    glowColor: 'rgba(34, 197, 94, 0.15)',
+  },
+  {
+    href: '/sos',
+    icon: MessageCircleWarning,
+    emoji: '💬',
+    titleEn: 'SOS Messages',
+    titleHi: 'SOS संदेश',
+    descEn: 'One-tap emergency messages with location',
+    descHi: 'एक टैप में लोकेशन के साथ आपातकालीन संदेश',
+    glowColor: 'rgba(239, 68, 68, 0.15)',
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Landing Page
+// ---------------------------------------------------------------------------
+
+export default function HomePage() {
+  const { t } = useLanguage();
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="flex flex-col items-center gap-10 py-6">
+      {/* ── Hero Section ─────────────────────────────────────────────── */}
+      <section className="flex flex-col items-center gap-5 text-center">
+        {/* Shield with glow */}
+        <div className="relative flex items-center justify-center">
+          {/* Outer glow ring */}
+          <div
+            className="absolute h-28 w-28 rounded-full opacity-40 blur-2xl"
+            style={{ background: 'radial-gradient(circle, #22C55E 0%, transparent 70%)' }}
+            aria-hidden="true"
+          />
+          {/* Inner glow ring */}
+          <div
+            className="absolute h-20 w-20 rounded-full opacity-60 blur-xl"
+            style={{ background: 'radial-gradient(circle, #22C55E 0%, transparent 70%)' }}
+            aria-hidden="true"
+          />
+          <Shield
+            size={72}
+            className="relative z-10 text-safe drop-shadow-[0_0_24px_rgba(34,197,94,0.4)]"
+            aria-hidden="true"
+          />
+        </div>
+
+        <h1 className="text-4xl font-bold tracking-tight text-foreground">
+          {APP_NAME}
+        </h1>
+
+        <p className="text-lg text-muted">
+          {t('Your Personal Safety Tool', 'आपका व्यक्तिगत सुरक्षा उपकरण')}
+        </p>
+
+        {/* Privacy badge */}
+        <span className="inline-flex items-center gap-2 rounded-full border border-safe/30 bg-safe/10 px-4 py-2 text-sm font-medium text-safe">
+          <Lock size={14} aria-hidden="true" />
+          {t(
+            '100% Private. No Signup. Works Offline.',
+            '100% निजी। कोई साइनअप नहीं। ऑफ़लाइन काम करता है।',
+          )}
+        </span>
+      </section>
+
+      {/* ── Feature Cards ────────────────────────────────────────────── */}
+      <section
+        className="flex w-full flex-col gap-4"
+        aria-label={t('Features', 'विशेषताएं')}
+      >
+        {FEATURES.map((feature) => {
+          const Icon = feature.icon;
+          return (
+            <Link
+              key={feature.href}
+              href={feature.href}
+              className="group card flex items-center gap-4 transition-all duration-200 hover:scale-[1.02] hover:border-safe/40 active:scale-[0.98]"
+              style={{
+                boxShadow: 'none',
+                transition: 'box-shadow 200ms ease, border-color 200ms ease, transform 200ms ease',
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.boxShadow =
+                  `0 0 30px ${feature.glowColor}`;
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.boxShadow = 'none';
+              }}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+              {/* Icon area */}
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-card-border/50">
+                <Icon
+                  size={28}
+                  className="text-safe transition-transform duration-200 group-hover:scale-110"
+                  aria-hidden="true"
+                />
+              </div>
+
+              {/* Text */}
+              <div className="flex-1 min-w-0">
+                <h2 className="text-base font-semibold text-foreground">
+                  <span aria-hidden="true">{feature.emoji} </span>
+                  {t(feature.titleEn, feature.titleHi)}
+                </h2>
+                <p className="mt-0.5 text-sm text-muted leading-snug">
+                  {t(feature.descEn, feature.descHi)}
+                </p>
+              </div>
+
+              {/* Arrow */}
+              <ArrowRight
+                size={20}
+                className="shrink-0 text-muted transition-transform duration-200 group-hover:translate-x-1 group-hover:text-safe"
+                aria-hidden="true"
+              />
+            </Link>
+          );
+        })}
+      </section>
+
+      {/* ── Privacy Notice ───────────────────────────────────────────── */}
+      <section className="w-full rounded-2xl border border-card-border bg-card-bg/50 p-5 text-center">
+        <div className="flex flex-col items-center gap-2">
+          <Lock size={20} className="text-muted" aria-hidden="true" />
+          <p className="text-sm leading-relaxed text-muted">
+            {t(
+              "Your data never leaves your device. We don't collect, store, or track anything.",
+              'आपका डेटा आपके डिवाइस से कभी बाहर नहीं जाता। हम कुछ भी एकत्र, संग्रहित या ट्रैक नहीं करते।',
+            )}
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      </section>
     </div>
   );
 }
