@@ -174,7 +174,7 @@ export default function ContactManager({
                     }
                   }}
                   onBlur={(e) => handlePhoneBlur(contact.id, e.target.value)}
-                  placeholder={t('phone_placeholder', '+91-XXXXXXXXXX')}
+                  placeholder="+91-9876543210"
                   className={`min-h-[48px] w-full rounded-lg border bg-white/5 py-3 pl-10 pr-4 text-base text-white placeholder:text-white/30 focus:outline-none focus:ring-1 ${
                     phoneErrors[contact.id]
                       ? 'border-red-500/50 focus:border-red-500/50 focus:ring-red-500/50'

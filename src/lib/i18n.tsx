@@ -112,6 +112,11 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
           return language === 'hi' ? (hi[arg1] || arg2) : (en[arg1] || arg2);
         }
 
+        // If arg1 looks like an underscore key (e.g. phone_placeholder) and has fallback:
+        if (arg1.includes('_')) {
+          return arg2;
+        }
+
         // Default: arg1 is English, arg2 is Hindi
         return language === 'hi' ? arg2 : arg1;
       }

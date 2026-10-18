@@ -351,7 +351,7 @@ export default function QRCardPage() {
                     type="tel"
                     value={contact}
                     onChange={(e) => updateContact(index, e.target.value)}
-                    placeholder={t('phone_placeholder_qr', '+91-XXXXXXXXXX')}
+                    placeholder="+91-9876543210"
                     className="min-h-[48px] flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
                     aria-label={`${t('emergency_contact', 'Emergency contact / आपातकालीन संपर्क')} ${index + 1}`}
                     maxLength={15}
