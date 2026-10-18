@@ -310,7 +310,7 @@ function ActiveSession({
   // Dead Man's Switch: Safety Interval (in minutes)
   const [intervalMinutes, setIntervalMinutes] = useState<number>(() => {
     const saved = getItem<number>(StorageKeys.CHECKIN_INTERVAL);
-    return saved && [1, 15, 30, 60].includes(saved) ? saved : 1;
+    return saved && [10, 15, 30, 60].includes(saved) ? saved : 10;
   });
 
   // Countdown to next check-in
@@ -694,7 +694,7 @@ function ActiveSession({
           </p>
           <div className="grid grid-cols-4 gap-1.5">
             {[
-              { val: 1, label: t('timer1', '1 मिनट\n(टेस्ट)', '1 min\n(Test)') },
+              { val: 10, label: t('timer10', '10 मिनट\n(हाई रिस्क)', '10 mins\n(High Risk)') },
               { val: 15, label: t('timer15', '15 मिनट\n(कैब)', '15 mins\n(Cab)') },
               { val: 30, label: t('timer30', '30 मिनट\n(सफ़र)', '30 mins\n(Commute)') },
               { val: 60, label: t('timer60', '60 मिनट\n(सामान्य)', '60 mins\n(Standard)') },

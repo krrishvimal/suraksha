@@ -209,7 +209,7 @@ function PublicStatusContent() {
   const uuid = typeof params?.uuid === 'string' ? params.uuid : '';
 
   const intervalParam = searchParams.get('interval') || searchParams.get('t');
-  const intervalMinutes = intervalParam ? parseInt(intervalParam, 10) || 1 : 1;
+  const intervalMinutes = intervalParam ? parseInt(intervalParam, 10) || 10 : 10;
 
   const [pageState, setPageState] = useState<PageState>('loading');
   const [data, setData] = useState<StatusPageData | null>(null);
