@@ -36,7 +36,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    const { passcode } = body as { passcode?: string };
+    const { passcode, location_link } = body as { passcode?: string; location_link?: string };
 
     if (!passcode || typeof passcode !== 'string') {
       return NextResponse.json(
@@ -85,7 +85,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         passcode_hash: passcodeHash,
         status: 'active',
         message: null,
-        location_link: null,
+        location_link: location_link || null,
         last_checkin_at: now.toISOString(),
         expires_at: expiresAt.toISOString(),
       })

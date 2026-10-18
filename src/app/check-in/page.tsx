@@ -182,10 +182,18 @@ function CreateSession({ onCreated }: { onCreated: (data: StatusData) => void })
     triggerHaptic();
 
     try {
+      // Request starting GPS location immediately on user click
+      let initialLocation: string | null = null;
+      try {
+        initialLocation = await getLocationLink();
+      } catch (locErr) {
+        console.warn('Initial GPS capture skipped or permission pending:', locErr);
+      }
+
       const response = await fetch('/api/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ passcode }),
+        body: JSON.stringify({ passcode, location_link: initialLocation }),
       });
 
       const data = await response.json();
@@ -320,6 +328,8 @@ function ActiveSession({
   const [isJourneyTracking, setIsJourneyTracking] = useState(true);
   const [lastGpsPingTime, setLastGpsPingTime] = useState<string | null>(null);
   const [isPingingGps, setIsPingingGps] = useState(false);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const hasOverduePingedRef = useRef(false);
 
   const queuedActionRef = useRef<QueuedAction | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -329,6 +339,38 @@ function ActiveSession({
     setItem(StorageKeys.CHECKIN_INTERVAL, mins);
     triggerHaptic();
   };
+
+  const pingLocation = useCallback(async () => {
+    if (!isJourneyTracking || !isOnline) return;
+    try {
+      setIsPingingGps(true);
+      setGpsError(null);
+      const link = await getLocationLink();
+      if (link) {
+        const res = await fetch(`/api/status/${uuid}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            passcode,
+            location_link: link,
+            update_checkin: false, // Does NOT reset Dead Man's Switch timer
+          }),
+        });
+        if (res.ok) {
+          setStatusData((prev) => ({ ...prev, location_link: link }));
+          setLastGpsPingTime(
+            new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          );
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Location access unavailable';
+      console.warn('GPS ping failed:', msg);
+      setGpsError(msg);
+    } finally {
+      setIsPingingGps(false);
+    }
+  }, [isJourneyTracking, isOnline, uuid, passcode]);
 
   // Live time and countdown updater
   useEffect(() => {
@@ -352,7 +394,14 @@ function ActiveSession({
             isOverdue: true,
             isUrgent: true,
           });
+
+          // Automatically broadcast emergency GPS location when timer expires
+          if (!hasOverduePingedRef.current) {
+            hasOverduePingedRef.current = true;
+            pingLocation();
+          }
         } else {
+          hasOverduePingedRef.current = false;
           const sec = Math.floor(diff / 1000);
           const min = Math.floor(sec / 60);
           const remSec = sec % 60;
@@ -375,49 +424,20 @@ function ActiveSession({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [statusData.last_checkin_at, statusData.expires_at, intervalMinutes]);
+  }, [statusData.last_checkin_at, statusData.expires_at, intervalMinutes, pingLocation]);
 
-  // Live Journey Mode: Auto GPS Breadcrumb Heartbeat (every 45s)
+  // Live Journey Mode: Auto GPS Breadcrumb Heartbeat (every 15s for 1m test, 45s normally)
   useEffect(() => {
     if (!isJourneyTracking || !isOnline) return;
 
-    let isSubscribed = true;
-
-    const pingLocation = async () => {
-      try {
-        setIsPingingGps(true);
-        const link = await getLocationLink();
-        if (link && isSubscribed) {
-          await fetch(`/api/status/${uuid}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              passcode,
-              location_link: link,
-              update_checkin: false, // Does NOT reset Dead Man's Switch timer
-            }),
-          });
-          if (isSubscribed) {
-            setLastGpsPingTime(
-              new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-            );
-          }
-        }
-      } catch {
-        // Silent fail for background GPS query
-      } finally {
-        if (isSubscribed) setIsPingingGps(false);
-      }
-    };
-
+    // Ping immediately
     pingLocation();
-    const beaconInterval = setInterval(pingLocation, 45000);
 
-    return () => {
-      isSubscribed = false;
-      clearInterval(beaconInterval);
-    };
-  }, [isJourneyTracking, isOnline, uuid, passcode]);
+    const pingIntervalMs = intervalMinutes === 1 ? 15000 : 45000;
+    const beaconInterval = setInterval(pingLocation, pingIntervalMs);
+
+    return () => clearInterval(beaconInterval);
+  }, [isJourneyTracking, isOnline, intervalMinutes, pingLocation]);
 
   // Auto-refresh status data from server
   useEffect(() => {
@@ -697,7 +717,7 @@ function ActiveSession({
 
         {/* Live Journey Tracking (Auto GPS Breadcrumbs) */}
         <div className="bg-neutral-900/90 border border-neutral-800 rounded-2xl p-4 mb-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2.5">
               <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isJourneyTracking ? 'bg-emerald-500/20 text-emerald-400' : 'bg-neutral-800 text-neutral-500'}`}>
                 <Navigation className="w-4 h-4" />
@@ -712,7 +732,7 @@ function ActiveSession({
                       ? t('gpsPinging', '🔄 GPS सिंक हो रहा है...', '🔄 Syncing GPS location...')
                       : lastGpsPingTime
                       ? `${t('lastGpsPing', 'अंतिम GPS:', 'Last GPS:')} ${lastGpsPingTime}`
-                      : t('gpsActive', '🟢 हर 45 सेकंड में ऑटो-अपडेट सक्रिय', '🟢 Auto-syncs every 45s')
+                      : t('gpsActive', '🟢 ऑटो-अपडेट सक्रिय', '🟢 Auto-sync active')
                     : t('gpsOff', 'बंद है', 'Disabled')}
                 </p>
               </div>
@@ -735,6 +755,49 @@ function ActiveSession({
               />
             </button>
           </div>
+
+          {/* Quick manual ping button & status */}
+          <div className="flex items-center justify-between pt-2.5 border-t border-neutral-800/80 text-xs">
+            {statusData.location_link ? (
+              <a
+                href={statusData.location_link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-emerald-400 hover:underline flex items-center gap-1 font-medium"
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                <span>{t('gpsLinked', 'GPS जुड़ा हुआ है (Maps देखें)', 'GPS linked (View Map)')}</span>
+              </a>
+            ) : (
+              <span className="text-neutral-500 flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5" />
+                <span>{t('noGpsYet', 'GPS पिंग प्रतीक्षारत', 'GPS pending')}</span>
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={() => pingLocation()}
+              disabled={isPingingGps}
+              className="text-xs bg-neutral-800 hover:bg-neutral-700 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 font-medium"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isPingingGps ? 'animate-spin' : ''}`} />
+              <span>{t('pingNow', 'GPS अभी भेजें', 'Ping GPS Now')}</span>
+            </button>
+          </div>
+
+          {/* Error if GPS permission blocked */}
+          {gpsError && (
+            <div className="mt-3 bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 text-xs text-amber-300 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium">{gpsError}</p>
+                <p className="text-neutral-400 text-[11px] mt-0.5">
+                  {t('allowLocationHint', 'ब्राउज़र एड्रेस बार में 🔒 आइकन पर क्लिक करके लोकेशन की अनुमति दें।', 'Click the 🔒 icon in your browser URL bar to allow location access.')}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Success/Error notifications */}

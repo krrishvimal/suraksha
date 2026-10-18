@@ -35,6 +35,7 @@ export function getCurrentPosition(): Promise<Coordinates> {
       return;
     }
 
+    // Attempt 1: High accuracy GPS
     navigator.geolocation.getCurrentPosition(
       (position) => {
         resolve({
@@ -43,15 +44,38 @@ export function getCurrentPosition(): Promise<Coordinates> {
         });
       },
       (error) => {
-        const message =
-          ERROR_MESSAGES[error.code] ??
-          `An unknown location error occurred (code ${error.code}).`;
-        reject(new Error(message));
+        // If user explicitly denied permission, fail immediately
+        if (error.code === 1) {
+          reject(new Error(ERROR_MESSAGES[1]));
+          return;
+        }
+
+        // Attempt 2: Fallback to Network / Wi-Fi positioning (fast and reliable on laptops & indoors)
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            resolve({
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+            });
+          },
+          (fallbackError) => {
+            const message =
+              ERROR_MESSAGES[fallbackError.code] ??
+              ERROR_MESSAGES[error.code] ??
+              'Location unavailable. Please make sure location access is enabled.';
+            reject(new Error(message));
+          },
+          {
+            enableHighAccuracy: false,
+            timeout: 8_000,
+            maximumAge: 60_000,
+          },
+        );
       },
       {
         enableHighAccuracy: true,
-        timeout: GEOLOCATION_TIMEOUT_MS,
-        maximumAge: 0, // Always get a fresh position
+        timeout: 5_000,
+        maximumAge: 30_000,
       },
     );
   });
