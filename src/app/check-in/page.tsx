@@ -648,7 +648,7 @@ function ActiveSession({
             <div className="flex items-center justify-center gap-2 text-amber-300 font-semibold text-sm">
               <Timer className="w-4 h-4 text-amber-400" />
               <span>
-                {t('urgentPrompt', 'चेक-इन का समय होने वाला है:', 'Check-in due soon:')}{' '}
+                {t('urgentPrompt', 'समय समाप्त होने वाला है! "मैं सुरक्षित हूँ" दबाएं:', 'Time running out! Tap "I\'m Safe" within:')}{' '}
                 <span className="font-mono font-bold text-white">{countdownState.text}</span>
               </span>
             </div>
@@ -659,19 +659,25 @@ function ActiveSession({
         <div className="text-center mb-6">
           <StatusBadge status={currentStatus} size="lg" pulse={currentStatus === 'need_help' || countdownState.isOverdue} />
           
-          {/* Dead Man's Switch Countdown */}
-          <div className="mt-4 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-neutral-900 border border-neutral-800 text-sm">
+        {/* Dead Man's Switch Countdown */}
+          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-neutral-900 border border-neutral-800 text-sm shadow-sm">
             <Timer className={`w-4 h-4 ${countdownState.isOverdue ? 'text-red-400 animate-spin' : countdownState.isUrgent ? 'text-amber-400' : 'text-emerald-400'}`} />
-            <span className="text-neutral-400">{t('nextDue', 'अगला चेक-इन:', 'Next check-in:')}</span>
-            <span className={`font-mono font-bold ${countdownState.isOverdue ? 'text-red-400' : countdownState.isUrgent ? 'text-amber-300' : 'text-white'}`}>
+            <span className="text-neutral-300">
+              {countdownState.isOverdue
+                ? t('overdueDue', '⚠️ समय समाप्त! तुरंत दबाएं:', '⚠️ Overdue! Tap now:')
+                : t('timeLeftToTapSafe', '⏳ "मैं सुरक्षित हूँ" दबाने में बचा समय:', '⏳ Time left to tap "I\'m Safe":')}
+            </span>
+            <span className={`font-mono font-bold text-base ${countdownState.isOverdue ? 'text-red-400 animate-pulse' : countdownState.isUrgent ? 'text-amber-300' : 'text-emerald-400'}`}>
               {countdownState.text}
             </span>
           </div>
 
-          <div className="mt-2 flex items-center justify-center gap-2 text-neutral-400">
-            <Clock className="w-3.5 h-3.5" />
+          <div className="mt-2.5 flex items-center justify-center gap-2 text-neutral-400">
+            <Clock className="w-3.5 h-3.5 text-neutral-500" />
             <span className="text-xs">
-              {t('lastCheckin', 'पिछला चेक-इन', 'Last check-in')}: <span className="text-white font-mono">{timeSinceCheckin}</span> {t('ago', 'पहले', 'ago')}
+              {t('lastConfirmedSafe', 'पिछली बार सुरक्षित बताया', 'Last confirmed safe')}:{' '}
+              <span className="text-white font-mono font-semibold">{timeSinceCheckin}</span>{' '}
+              {t('ago', 'पहले', 'ago')}
             </span>
           </div>
         </div>
@@ -681,7 +687,7 @@ function ActiveSession({
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
               <Timer className="w-3.5 h-3.5 text-emerald-400" />
-              {t('safetyTimer', 'सुरक्षा टाइमर (Dead Man\'s Switch)', 'Safety Timer (Dead Man\'s Switch)')}
+              {t('safetyTimer', 'सुरक्षा टाइमर (अलार्म अंतराल)', 'Safety Check-In Timer')}
             </span>
             <span className="text-xs text-neutral-500 font-mono">{intervalMinutes}m</span>
           </div>

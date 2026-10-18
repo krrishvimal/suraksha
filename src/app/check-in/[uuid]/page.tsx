@@ -417,10 +417,12 @@ function PublicStatusContent() {
 
         {/* Safety Interval Info Badge */}
         <div className="flex items-center justify-center gap-2 mb-6">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-xs text-neutral-400">
+          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-neutral-900 border border-neutral-800 text-xs text-neutral-300">
             <Timer className="w-3.5 h-3.5 text-emerald-400" />
             <span>
-              {t('timerActive', 'सुरक्षा टाइमर:', 'Safety Timer:')} <strong className="text-white">{intervalMinutes} min</strong> Dead Man&apos;s Switch
+              {t('timerActive', 'सुरक्षा अंतराल:', 'Safety interval:')}{' '}
+              <strong className="text-white font-mono">{intervalMinutes} min</strong> —{' '}
+              {t('timerMustConfirm', 'हर ' + intervalMinutes + ' मिनट में "मैं सुरक्षित हूँ" दबाना आवश्यक है', 'Must tap "I\'m Safe" every ' + intervalMinutes + ' mins')}
             </span>
           </div>
         </div>
@@ -432,8 +434,8 @@ function PublicStatusContent() {
               <Clock className="w-5 h-5 text-neutral-400" />
             </div>
             <div className="flex-1">
-              <p className="text-xs text-neutral-500 mb-0.5">
-                {t('lastCheckin', 'पिछला चेक-इन / अंतिम सिग्नल', 'Last check-in / Last signal')}
+              <p className="text-xs text-neutral-400 mb-0.5">
+                {t('lastConfirmedSafe', 'पिछली बार सुरक्षित होने की पुष्टि', 'Last confirmed safe')}
               </p>
               <p className="text-xl font-bold font-mono tracking-wide">
                 {timeSinceCheckin} <span className="text-sm font-normal text-neutral-500">{t('ago', 'पहले', 'ago')}</span>
