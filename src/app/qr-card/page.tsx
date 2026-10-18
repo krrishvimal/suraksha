@@ -5,11 +5,11 @@ import {
   QrCode,
   Save,
   Download,
-  Heart,
+  User,
   Droplets,
   Phone,
   AlertTriangle,
-  Stethoscope,
+  FileText,
   Plus,
   Trash2,
   CheckCircle,
@@ -19,7 +19,9 @@ import {
   Sparkles,
   HelpCircle,
   Smartphone,
+  Lock,
   Eye,
+  ShieldAlert,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n';
 import { getItem, setItem, StorageKeys } from '@/lib/storage';
@@ -33,7 +35,7 @@ interface EmergencyCardData {
   bloodGroup: BloodGroup;
   emergencyContacts: string[];
   allergies: string;
-  medicalConditions: string;
+  medicalConditions: string; // Used for Emergency Notes & Instructions
 }
 
 const EMPTY_CARD: EmergencyCardData = {
@@ -46,7 +48,8 @@ const EMPTY_CARD: EmergencyCardData = {
 
 const MAX_EMERGENCY_CONTACTS = 2;
 
-type CardTheme = 'medical' | 'dark';
+type CardTheme = 'emergency' | 'dark';
+type DisplayMode = 'privacy' | 'open';
 
 // Safe cross-browser round rectangle helper
 function drawRoundRect(
@@ -75,7 +78,8 @@ export default function QRCardPage() {
   const { t } = useLanguage();
   const [formData, setFormData] = useState<EmergencyCardData>(EMPTY_CARD);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const [cardTheme, setCardTheme] = useState<CardTheme>('medical');
+  const [cardTheme, setCardTheme] = useState<CardTheme>('emergency');
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('privacy');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -146,9 +150,13 @@ export default function QRCardPage() {
     });
   }, []);
 
-  // Renders complete high-visibility Emergency Medical ID Badge on HTML5 Canvas
+  // Renders complete high-visibility Universal Emergency ID Badge on HTML5 Canvas
   const generateQRBadge = useCallback(
-    async (data: EmergencyCardData, theme: CardTheme = cardTheme) => {
+    async (
+      data: EmergencyCardData,
+      theme: CardTheme = cardTheme,
+      mode: DisplayMode = displayMode
+    ) => {
       setIsGenerating(true);
       setError(null);
       try {
@@ -158,13 +166,17 @@ export default function QRCardPage() {
         const filteredContacts = data.emergencyContacts.filter((c) => c.trim().length > 0);
         const contactsText = filteredContacts.length > 0 ? filteredContacts.join(', ') : 'None';
 
+        // When scanned, phone cameras highlight numbers and make them 1-tap dialable
         const qrPayload = [
-          '🚨 EMERGENCY MEDICAL ID | आपातकालीन चिकित्सा पहचान',
+          '🚨 EMERGENCY SOS ID | आपातकालीन पहचान',
+          '━━━━━━━━━━━━━━━━━━━━━━',
           `👤 Name: ${data.name.trim() || 'Not specified'}`,
-          `🩸 Blood Group: ${data.bloodGroup || 'Not specified'}`,
           `📞 Emergency Contact: ${contactsText}`,
-          `⚠️ Allergies: ${data.allergies.trim() || 'None'}`,
-          `🏥 Medical Conditions: ${data.medicalConditions.trim() || 'None'}`,
+          `🩸 Blood Group: ${data.bloodGroup || 'Not specified'}`,
+          `⚠️ Critical Notes: ${data.allergies.trim() || 'None'}`,
+          `📝 Emergency Instructions: ${data.medicalConditions.trim() || 'None'}`,
+          '━━━━━━━━━━━━━━━━━━━━━━',
+          `⚡ In emergency, call ${contactsText} or dial 112 immediately.`,
           '— Suraksha Privacy-First Safety'
         ].join('\n');
 
@@ -222,31 +234,43 @@ export default function QRCardPage() {
         ctx.fillStyle = bannerGrad;
         ctx.fillRect(0, 0, 540, 126);
 
-        // Header White Medical Cross Emblem Badge
+        // Header White Protective Shield Emblem Badge
         ctx.fillStyle = '#FFFFFF';
         ctx.beginPath();
-        ctx.arc(52, 63, 24, 0, Math.PI * 2);
+        ctx.arc(52, 63, 25, 0, Math.PI * 2);
         ctx.fill();
 
-        // Red cross inside header emblem
+        // Crimson Shield Icon inside emblem
         ctx.fillStyle = '#DC2626';
-        // Vertical bar
-        ctx.fillRect(48, 48, 8, 30);
-        // Horizontal bar
-        ctx.fillRect(37, 59, 30, 8);
+        ctx.beginPath();
+        ctx.moveTo(52, 47);
+        ctx.lineTo(67, 53);
+        ctx.lineTo(67, 67);
+        ctx.quadraticCurveTo(67, 80, 52, 86);
+        ctx.quadraticCurveTo(37, 80, 37, 67);
+        ctx.lineTo(37, 53);
+        ctx.closePath();
+        ctx.fill();
+
+        // Inner white exclamation point
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 17px system-ui, -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('!', 52, 72);
+        ctx.textAlign = 'left';
 
         // Header Typography
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
-        ctx.fillText('EMERGENCY MEDICAL ID', 92, 50);
+        ctx.font = 'bold 23px system-ui, -apple-system, sans-serif';
+        ctx.fillText('EMERGENCY ID CARD', 92, 50);
 
         ctx.fillStyle = '#FEE2E2';
         ctx.font = '500 13px system-ui, -apple-system, sans-serif';
-        ctx.fillText('आपातकालीन चिकित्सा पहचान कार्ड', 92, 72);
+        ctx.fillText('आपातकालीन पहचान पत्र', 92, 72);
 
         ctx.fillStyle = '#FEF08A';
         ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
-        ctx.fillText('⚡ SCAN WITH ANY CAMERA • NO APP NEEDED', 92, 95);
+        ctx.fillText('⚡ SCAN WITH CAMERA TO CALL CONTACTS • NO APP NEEDED', 92, 95);
         ctx.restore();
 
         // 3. Central QR Code Container
@@ -265,42 +289,47 @@ export default function QRCardPage() {
         // Draw the QR Code image (280x280 centered in the 320x320 box)
         ctx.drawImage(qrImg, qrBoxX + 20, qrBoxY + 20, 280, 280);
 
-        // 4. Center Medical Cross Emblem (Overlayed right on the QR center!)
+        // 4. Center Universal SOS Emblem (Overlayed right on the QR center!)
         const centerEmblemX = 270;
         const centerEmblemY = qrBoxY + 160;
-        const emblemSize = 60;
+        const emblemW = 66;
+        const emblemH = 46;
 
-        // White badge with crimson border
-        ctx.fillStyle = '#FFFFFF';
+        // Crimson pill badge with bold white border
+        ctx.fillStyle = '#DC2626';
         drawRoundRect(
           ctx,
-          centerEmblemX - emblemSize / 2,
-          centerEmblemY - emblemSize / 2,
-          emblemSize,
-          emblemSize,
-          14
+          centerEmblemX - emblemW / 2,
+          centerEmblemY - emblemH / 2,
+          emblemW,
+          emblemH,
+          12
         );
         ctx.fill();
 
         ctx.lineWidth = 3;
-        ctx.strokeStyle = '#DC2626';
+        ctx.strokeStyle = '#FFFFFF';
         ctx.stroke();
 
-        // Red Cross inside emblem
-        ctx.fillStyle = '#DC2626';
-        // Vertical bar
-        ctx.fillRect(centerEmblemX - 5, centerEmblemY - 20, 10, 40);
-        // Horizontal bar
-        ctx.fillRect(centerEmblemX - 20, centerEmblemY - 5, 40, 10);
+        // Bold SOS text
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '900 21px system-ui, -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('SOS', centerEmblemX, centerEmblemY + 7);
 
         // Subtext under QR
         ctx.fillStyle = isDark ? '#94A3B8' : '#64748B';
         ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('🔒 100% OFFLINE SECURE • NO INTERNET NEEDED TO SCAN', 270, 482);
+        ctx.fillText(
+          mode === 'privacy'
+            ? '🔒 CONTACTS PROTECTED • POINT CAMERA AT QR TO CALL'
+            : '🔒 100% OFFLINE SECURE • POINT CAMERA AT QR TO CALL',
+          270,
+          482
+        );
         ctx.textAlign = 'left';
 
-        // 5. Patient Vital Details Card
+        // 5. Details Section
         const infoCardY = 502;
         ctx.fillStyle = isDark ? '#1E293B' : '#FFFFFF';
         drawRoundRect(ctx, 24, infoCardY, 492, 252, 18);
@@ -320,7 +349,7 @@ export default function QRCardPage() {
         const truncatedName = displayName.length > 20 ? displayName.slice(0, 18) + '...' : displayName;
         ctx.fillText(truncatedName, 44, infoCardY + 54);
 
-        // Blood Group Pill (Top Right)
+        // Blood Group Pill (Top Right, if set)
         if (data.bloodGroup) {
           const pillX = 370;
           const pillY = infoCardY + 24;
@@ -346,47 +375,77 @@ export default function QRCardPage() {
         ctx.lineTo(496, infoCardY + 74);
         ctx.stroke();
 
-        // Row 2: Emergency Contacts
-        ctx.fillStyle = isDark ? '#94A3B8' : '#64748B';
-        ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
-        ctx.fillText('EMERGENCY CONTACTS / आपातकालीन संपर्क:', 44, infoCardY + 98);
+        if (mode === 'privacy') {
+          // PRIVACY MODE: Numbers are kept safely inside the QR code so strangers on the metro can't peep at them!
+          ctx.fillStyle = isDark ? '#94A3B8' : '#64748B';
+          ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+          ctx.fillText('EMERGENCY CONTACTS / आपातकालीन संपर्क:', 44, infoCardY + 102);
 
-        ctx.fillStyle = '#059669';
-        ctx.font = 'bold 15px system-ui, -apple-system, sans-serif';
-        ctx.fillText(`📞 ${contactsText}`, 44, infoCardY + 120);
+          ctx.fillStyle = '#059669';
+          ctx.font = 'bold 15px system-ui, -apple-system, sans-serif';
+          ctx.fillText('🔒 Encoded in QR (Scan to Call Family / संपर्क करें)', 44, infoCardY + 124);
 
-        // Row 3: Allergies
-        ctx.fillStyle = isDark ? '#94A3B8' : '#64748B';
-        ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
-        ctx.fillText('ALLERGIES / एलर्जी:', 44, infoCardY + 146);
+          ctx.fillStyle = isDark ? '#94A3B8' : '#64748B';
+          ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+          ctx.fillText('EMERGENCY INSTRUCTIONS / आपातकालीन निर्देश:', 44, infoCardY + 154);
 
-        const allergiesVal = data.allergies.trim() || 'None reported / कोई नहीं';
-        ctx.fillStyle = '#D97706';
-        ctx.font = '600 13px system-ui, -apple-system, sans-serif';
-        ctx.fillText(
-          allergiesVal.length > 44 ? allergiesVal.slice(0, 42) + '...' : allergiesVal,
-          44,
-          infoCardY + 166
-        );
+          ctx.fillStyle = '#4F46E5';
+          ctx.font = '600 13px system-ui, -apple-system, sans-serif';
+          ctx.fillText('🔒 Encoded in QR Code (Scan to View / देखने हेतु स्कैन करें)', 44, infoCardY + 174);
 
-        // Row 4: Medical Conditions
-        ctx.fillStyle = isDark ? '#94A3B8' : '#64748B';
-        ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
-        ctx.fillText('MEDICAL CONDITIONS / चिकित्सा स्थितियां:', 44, infoCardY + 192);
+          // Helpful instruction pill
+          ctx.fillStyle = isDark ? '#022C22' : '#F0FDF4';
+          drawRoundRect(ctx, 44, infoCardY + 196, 452, 40, 10);
+          ctx.fill();
+          ctx.strokeStyle = '#10B981';
+          ctx.lineWidth = 1;
+          ctx.stroke();
 
-        const conditionsVal = data.medicalConditions.trim() || 'None reported / कोई नहीं';
-        ctx.fillStyle = '#7C3AED';
-        ctx.font = '600 13px system-ui, -apple-system, sans-serif';
-        ctx.fillText(
-          conditionsVal.length > 44 ? conditionsVal.slice(0, 42) + '...' : conditionsVal,
-          44,
-          infoCardY + 212
-        );
+          ctx.fillStyle = '#059669';
+          ctx.font = 'bold 11.5px system-ui, -apple-system, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('👉 Responders: Point any phone camera at QR code above to call', 270, infoCardY + 221);
+          ctx.textAlign = 'left';
+        } else {
+          // OPEN MODE: Displays all numbers and notes directly on the card
+          ctx.fillStyle = isDark ? '#94A3B8' : '#64748B';
+          ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+          ctx.fillText('EMERGENCY CONTACTS / आपातकालीन संपर्क:', 44, infoCardY + 98);
 
-        // Row 5: Action instruction
-        ctx.fillStyle = isDark ? '#64748B' : '#94A3B8';
-        ctx.font = '500 10px system-ui, -apple-system, sans-serif';
-        ctx.fillText('In case of accident or emergency, call contacts above immediately.', 44, infoCardY + 234);
+          ctx.fillStyle = '#059669';
+          ctx.font = 'bold 15px system-ui, -apple-system, sans-serif';
+          ctx.fillText(`📞 ${contactsText}`, 44, infoCardY + 120);
+
+          ctx.fillStyle = isDark ? '#94A3B8' : '#64748B';
+          ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+          ctx.fillText('CRITICAL NOTES / महत्वपूर्ण जानकारी:', 44, infoCardY + 146);
+
+          const allergiesVal = data.allergies.trim() || 'None reported / कोई नहीं';
+          ctx.fillStyle = '#D97706';
+          ctx.font = '600 13px system-ui, -apple-system, sans-serif';
+          ctx.fillText(
+            allergiesVal.length > 44 ? allergiesVal.slice(0, 42) + '...' : allergiesVal,
+            44,
+            infoCardY + 166
+          );
+
+          ctx.fillStyle = isDark ? '#94A3B8' : '#64748B';
+          ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+          ctx.fillText('EMERGENCY INSTRUCTIONS / आपातकालीन निर्देश:', 44, infoCardY + 192);
+
+          const conditionsVal = data.medicalConditions.trim() || 'None reported / कोई नहीं';
+          ctx.fillStyle = '#7C3AED';
+          ctx.font = '600 13px system-ui, -apple-system, sans-serif';
+          ctx.fillText(
+            conditionsVal.length > 44 ? conditionsVal.slice(0, 42) + '...' : conditionsVal,
+            44,
+            infoCardY + 212
+          );
+
+          ctx.fillStyle = isDark ? '#64748B' : '#94A3B8';
+          ctx.font = '500 10px system-ui, -apple-system, sans-serif';
+          ctx.fillText('In emergency, call contacts above or scan QR for 1-tap dial.', 44, infoCardY + 234);
+        }
 
         // 6. National Helplines Bar
         const helplineY = 768;
@@ -400,7 +459,7 @@ export default function QRCardPage() {
         ctx.fillStyle = '#DC2626';
         ctx.font = 'bold 11.5px system-ui, -apple-system, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('🚨 NATIONAL HELPLINES: Police 112 • Ambulance 108 • Women 1091', 270, helplineY + 26);
+        ctx.fillText('🚨 HELPLINES: Police / All Emergency 112 • Ambulance 108 • Women 1091', 270, helplineY + 26);
 
         // 7. Watermark / Footer
         ctx.fillStyle = isDark ? '#64748B' : '#94A3B8';
@@ -412,7 +471,7 @@ export default function QRCardPage() {
         const finalDataUrl = canvas.toDataURL('image/png');
         setQrDataUrl(finalDataUrl);
       } catch (err) {
-        console.error('QR ID Badge generation failed:', err);
+        console.error('Emergency ID Badge generation failed:', err);
         setError(
           t(
             'qr_gen_failed',
@@ -423,7 +482,7 @@ export default function QRCardPage() {
         setIsGenerating(false);
       }
     },
-    [cardTheme, t]
+    [cardTheme, displayMode, t]
   );
 
   const handleSave = useCallback(async () => {
@@ -441,7 +500,7 @@ export default function QRCardPage() {
       setItem(StorageKeys.EMERGENCY_CARD, formData);
 
       // Generate Stylized Badge
-      await generateQRBadge(formData, cardTheme);
+      await generateQRBadge(formData, cardTheme, displayMode);
 
       // Show success message
       setShowSuccess(true);
@@ -458,23 +517,33 @@ export default function QRCardPage() {
     } finally {
       setIsSaving(false);
     }
-  }, [formData, cardTheme, generateQRBadge, t]);
+  }, [formData, cardTheme, displayMode, generateQRBadge, t]);
 
   const handleThemeChange = useCallback(
     async (newTheme: CardTheme) => {
       setCardTheme(newTheme);
       if (formData.name.trim()) {
-        await generateQRBadge(formData, newTheme);
+        await generateQRBadge(formData, newTheme, displayMode);
       }
     },
-    [formData, generateQRBadge]
+    [formData, displayMode, generateQRBadge]
+  );
+
+  const handleDisplayModeChange = useCallback(
+    async (newMode: DisplayMode) => {
+      setDisplayMode(newMode);
+      if (formData.name.trim()) {
+        await generateQRBadge(formData, cardTheme, newMode);
+      }
+    },
+    [formData, cardTheme, generateQRBadge]
   );
 
   const handleDownload = useCallback(() => {
     if (!qrDataUrl) return;
     try {
       const link = document.createElement('a');
-      link.download = `suraksha-medical-id-${formData.name.trim().replace(/\s+/g, '-').toLowerCase() || 'card'}.png`;
+      link.download = `suraksha-emergency-id-${formData.name.trim().replace(/\s+/g, '-').toLowerCase() || 'card'}.png`;
       link.href = qrDataUrl;
       link.click();
     } catch (err) {
@@ -509,13 +578,13 @@ export default function QRCardPage() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div className="flex items-center gap-2">
-            <QrCode className="h-6 w-6 text-red-500" aria-hidden="true" />
+            <ShieldAlert className="h-6 w-6 text-red-500" aria-hidden="true" />
             <div>
               <h1 className="text-lg font-bold text-white">
-                {t('emergency_qr_card', 'Emergency Medical ID Badge / आपातकालीन मेडिकल ID बैज')}
+                {t('emergency_qr_card', 'Emergency ID Card / आपातकालीन पहचान पत्र')}
               </h1>
               <p className="text-xs text-white/40">
-                {t('qr_subtitle', 'Hospital-grade scannable emergency ID card / अस्पताल-ग्रेड आपातकालीन ID कार्ड')}
+                {t('qr_subtitle', 'Universal scannable emergency ID card / सभी आपात स्थितियों के लिए पहचान पत्र')}
               </p>
             </div>
           </div>
@@ -542,7 +611,7 @@ export default function QRCardPage() {
             aria-live="polite"
           >
             <CheckCircle className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-            {t('saved_successfully', 'Medical ID Badge generated! / मेडिकल ID बैज बन गया!')}
+            {t('saved_successfully', 'Emergency ID Badge generated! / आपातकालीन ID बैज बन गया!')}
           </div>
         )}
 
@@ -565,7 +634,7 @@ export default function QRCardPage() {
               htmlFor="qr-name"
               className="mb-2 flex items-center gap-2 text-sm font-medium text-white/70"
             >
-              <Heart className="h-4 w-4 text-pink-400" aria-hidden="true" />
+              <User className="h-4 w-4 text-pink-400" aria-hidden="true" />
               {t('full_name', 'Full Name / पूरा नाम')}
               <span className="text-red-400">*</span>
             </label>
@@ -580,33 +649,6 @@ export default function QRCardPage() {
               required
               aria-required="true"
             />
-          </div>
-
-          {/* Blood Group */}
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-            <label
-              htmlFor="qr-blood-group"
-              className="mb-2 flex items-center gap-2 text-sm font-medium text-white/70"
-            >
-              <Droplets className="h-4 w-4 text-red-400" aria-hidden="true" />
-              {t('blood_group', 'Blood Group / रक्त समूह')}
-            </label>
-            <select
-              id="qr-blood-group"
-              value={formData.bloodGroup}
-              onChange={(e) => updateField('bloodGroup', e.target.value as BloodGroup)}
-              className="min-h-[48px] w-full appearance-none rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white focus:border-red-500/50 focus:outline-none focus:ring-1 focus:ring-red-500/50"
-              aria-label={t('select_blood_group', 'Select blood group / रक्त समूह चुनें')}
-            >
-              <option value="" className="bg-[#1a1a1a] text-white/50">
-                {t('select_blood_group', 'Select blood group / रक्त समूह चुनें')}
-              </option>
-              {BLOOD_GROUPS.map((bg) => (
-                <option key={bg} value={bg} className="bg-[#1a1a1a] text-white">
-                  {bg}
-                </option>
-              ))}
-            </select>
           </div>
 
           {/* Emergency Contacts */}
@@ -656,63 +698,141 @@ export default function QRCardPage() {
             </div>
           </div>
 
-          {/* Allergies */}
+          {/* Blood Group (Optional) */}
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+            <label
+              htmlFor="qr-blood-group"
+              className="mb-2 flex items-center gap-2 text-sm font-medium text-white/70"
+            >
+              <Droplets className="h-4 w-4 text-red-400" aria-hidden="true" />
+              {t('blood_group', 'Blood Group (Optional) / रक्त समूह (ऐच्छिक)')}
+            </label>
+            <select
+              id="qr-blood-group"
+              value={formData.bloodGroup}
+              onChange={(e) => updateField('bloodGroup', e.target.value as BloodGroup)}
+              className="min-h-[48px] w-full appearance-none rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white focus:border-red-500/50 focus:outline-none focus:ring-1 focus:ring-red-500/50"
+              aria-label={t('select_blood_group', 'Select blood group / रक्त समूह चुनें')}
+            >
+              <option value="" className="bg-[#1a1a1a] text-white/50">
+                {t('select_blood_group', 'Select blood group / रक्त समूह चुनें')}
+              </option>
+              {BLOOD_GROUPS.map((bg) => (
+                <option key={bg} value={bg} className="bg-[#1a1a1a] text-white">
+                  {bg}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Critical Notes / Allergies */}
           <div className="rounded-xl border border-white/10 bg-white/5 p-4">
             <label
               htmlFor="qr-allergies"
               className="mb-2 flex items-center gap-2 text-sm font-medium text-white/70"
             >
               <AlertTriangle className="h-4 w-4 text-amber-400" aria-hidden="true" />
-              {t('allergies', 'Allergies / एलर्जी')}
+              {t('critical_info', 'Critical Notes / Allergies (महत्वपूर्ण जानकारी / एलर्जी)')}
             </label>
             <input
               id="qr-allergies"
               type="text"
               value={formData.allergies}
               onChange={(e) => updateField('allergies', e.target.value)}
-              placeholder={t('allergies_placeholder', 'e.g., Penicillin, Peanuts, Pollen / जैसे, पेनिसिलिन, मूंगफली')}
+              placeholder={t('critical_placeholder', 'e.g., Penicillin allergy, Diabetic, Carry inhaler / जैसे, पेनिसिलिन एलर्जी')}
               className="min-h-[48px] w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder:text-white/30 focus:border-red-500/50 focus:outline-none focus:ring-1 focus:ring-red-500/50"
               maxLength={100}
             />
           </div>
 
-          {/* Medical Conditions */}
+          {/* Emergency Instructions / Notes */}
           <div className="rounded-xl border border-white/10 bg-white/5 p-4">
             <label
               htmlFor="qr-medical"
               className="mb-2 flex items-center gap-2 text-sm font-medium text-white/70"
             >
-              <Stethoscope className="h-4 w-4 text-purple-400" aria-hidden="true" />
-              {t('medical_conditions', 'Medical Conditions / चिकित्सा स्थितियां')}
+              <FileText className="h-4 w-4 text-purple-400" aria-hidden="true" />
+              {t('emergency_instructions', 'Emergency Instructions / आपातकालीन निर्देश')}
             </label>
             <input
               id="qr-medical"
               type="text"
               value={formData.medicalConditions}
               onChange={(e) => updateField('medicalConditions', e.target.value)}
-              placeholder={t('medical_placeholder', 'e.g., Asthma, Diabetes, Heart condition / जैसे, दमा, मधुमेह')}
+              placeholder={t('instructions_placeholder', 'e.g., If lost call parents / If detained notify lawyer / अगर खो जाए तो माता-पिता को कॉल करें')}
               className="min-h-[48px] w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder:text-white/30 focus:border-red-500/50 focus:outline-none focus:ring-1 focus:ring-red-500/50"
               maxLength={100}
             />
           </div>
 
-          {/* Badge Theme Chooser */}
+          {/* Card Display Mode Chooser: Privacy vs Open */}
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+            <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-400">
+              <Lock className="h-4 w-4" aria-hidden="true" />
+              {t('display_mode_title', 'Lock Screen Privacy Mode / गोपनीयता मोड')}
+            </label>
+            <p className="mb-3 text-xs leading-relaxed text-white/60">
+              {t(
+                'display_mode_desc',
+                'Choose how much info is visible on the card image vs hidden inside the QR scan:'
+              )}
+            </p>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => handleDisplayModeChange('privacy')}
+                className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-all ${
+                  displayMode === 'privacy'
+                    ? 'border-emerald-500 bg-emerald-500/20 text-white shadow-md'
+                    : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/10'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-300">
+                  <Lock className="h-3.5 w-3.5" />
+                  {t('mode_privacy', 'Privacy Mode')}
+                </div>
+                <span className="text-[11px] leading-tight text-white/70">
+                  Numbers hidden in QR. Strangers on metro can&apos;t steal phone numbers.
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleDisplayModeChange('open')}
+                className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-all ${
+                  displayMode === 'open'
+                    ? 'border-blue-500 bg-blue-500/20 text-white shadow-md'
+                    : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/10'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 text-xs font-bold text-blue-300">
+                  <Eye className="h-3.5 w-3.5" />
+                  {t('mode_open', 'Open Badge')}
+                </div>
+                <span className="text-[11px] leading-tight text-white/70">
+                  Numbers printed on card + QR for instant 1-tap call. Best for wallet printouts.
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* Badge Color Style Chooser */}
           <div className="rounded-xl border border-white/10 bg-white/5 p-4">
             <label className="mb-2.5 flex items-center gap-2 text-sm font-medium text-white/70">
               <Sparkles className="h-4 w-4 text-amber-400" aria-hidden="true" />
-              {t('badge_theme', 'Badge Style / बैज का डिज़ाइन')}
+              {t('badge_theme', 'Badge Color Style / बैज का रंग')}
             </label>
             <div className="grid grid-cols-2 gap-2.5">
               <button
                 type="button"
-                onClick={() => handleThemeChange('medical')}
+                onClick={() => handleThemeChange('emergency')}
                 className={`flex items-center justify-center gap-2 rounded-lg border p-3 text-xs font-semibold transition-all ${
-                  cardTheme === 'medical'
+                  cardTheme === 'emergency'
                     ? 'border-red-500 bg-red-500/20 text-white shadow-sm'
                     : 'border-white/10 bg-white/5 text-white/60 hover:bg-white/10'
                 }`}
               >
-                🏥 {t('theme_medical', 'Medical Red / आपातकालीन लाल')}
+                🚨 {t('theme_emergency', 'Emergency Red / आपातकालीन लाल')}
               </button>
               <button
                 type="button"
@@ -735,7 +855,7 @@ export default function QRCardPage() {
           onClick={handleSave}
           disabled={isSaving || isGenerating}
           className="flex min-h-[56px] w-full items-center justify-center gap-2.5 rounded-xl bg-red-600 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-red-600/25 transition-all hover:bg-red-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-          aria-label={t('generate_medical_badge', 'Save & Generate Medical Badge / सेव करें और मेडिकल बैज बनाएं')}
+          aria-label={t('generate_emergency_badge', 'Save & Generate Emergency ID Badge / सेव करें और ID बैज बनाएं')}
         >
           {isSaving || isGenerating ? (
             <>
@@ -745,7 +865,7 @@ export default function QRCardPage() {
           ) : (
             <>
               <Save className="h-5 w-5" aria-hidden="true" />
-              {t('generate_medical_badge', 'Save & Generate Medical ID Badge / सेव करें और मेडिकल ID बनाएं')}
+              {t('generate_emergency_badge', 'Save & Generate Emergency ID Badge / सेव करें और ID बैज बनाएं')}
             </>
           )}
         </button>
@@ -754,16 +874,18 @@ export default function QRCardPage() {
         {qrDataUrl && (
           <section
             className="overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.08] to-white/[0.03]"
-            aria-label={t('qr_code_section', 'Medical ID Badge / मेडिकल ID बैज')}
+            aria-label={t('qr_code_section', 'Emergency ID Badge / आपातकालीन ID बैज')}
           >
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
               <div>
                 <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
                   <ShieldCheck className="h-4 w-4 text-red-500" aria-hidden="true" />
-                  {t('your_emergency_badge', 'Your Emergency Medical Badge / आपका मेडिकल ID बैज')}
+                  {t('your_emergency_badge', 'Your Emergency ID Card / आपका आपातकालीन ID कार्ड')}
                 </h2>
                 <p className="mt-0.5 text-xs text-white/40">
-                  {t('badge_subtitle', 'Print for wallet or save as lock screen wallpaper / बटुए में रखें या लॉक स्क्रीन पर लगाएं')}
+                  {displayMode === 'privacy'
+                    ? '🔒 Privacy Protected: Numbers encoded inside QR code'
+                    : '📋 Open Badge: Numbers printed directly on card'}
                 </p>
               </div>
               <span className="rounded-full bg-red-500/20 px-2.5 py-1 text-[11px] font-bold text-red-400">
@@ -776,7 +898,7 @@ export default function QRCardPage() {
               <div className="relative w-full max-w-[340px] overflow-hidden rounded-2xl border-2 border-white/20 shadow-2xl shadow-red-950/40">
                 <img
                   src={qrDataUrl}
-                  alt={t('emergency_badge_alt', 'Emergency Medical ID Badge / आपातकालीन मेडिकल ID बैज')}
+                  alt={t('emergency_badge_alt', 'Emergency ID Badge / आपातकालीन ID बैज')}
                   className="h-auto w-full rounded-xl"
                   width={540}
                   height={860}
@@ -789,42 +911,42 @@ export default function QRCardPage() {
                   type="button"
                   onClick={handleDownload}
                   className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-white/10 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/20 active:scale-[0.98]"
-                  aria-label={t('download_badge_png', 'Download Badge Image (PNG) / बैज डाउनलोड करें')}
+                  aria-label={t('download_badge_png', 'Download ID Badge (PNG) / ID बैज डाउनलोड करें')}
                 >
                   <Download className="h-4 w-4" aria-hidden="true" />
                   {t('download_badge_png', 'Download ID Badge (PNG) / ID बैज डाउनलोड करें')}
                 </button>
               </div>
 
-              {/* Trust & Recognition Explanation */}
+              {/* WHY SCAN & TRUST EXPLANATION */}
               <div className="mt-5 w-full space-y-3 rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-left">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-red-400">
                   <HelpCircle className="h-4 w-4" />
-                  {t('why_trust_title', 'Why First Responders Trust This Badge / लोग इसे क्यों पहचानेंगे और विश्वास करेंगे')}
+                  {t('why_scan_title', 'Why Bystanders & Responders Scan This / लोग इसे क्यों स्कैन और कॉल करेंगे')}
                 </div>
-                <ul className="space-y-2 text-xs leading-relaxed text-white/70">
+                <ul className="space-y-2.5 text-xs leading-relaxed text-white/70">
                   <li className="flex items-start gap-2">
-                    <span className="font-bold text-red-400">✚</span>
+                    <span className="font-bold text-emerald-400">📞</span>
                     <span>
-                      <strong className="text-white">Universal Red Cross Emblem:</strong> The embedded medical cross tells paramedics, police, and bystanders immediately that this is an emergency medical card, not an ad or payment code.
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="font-bold text-emerald-400">👁️</span>
-                    <span>
-                      <strong className="text-white">Instant Visual Triage:</strong> Name, Blood Group (🩸), and Emergency Contacts are legible directly on the card even if nobody scans it.
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="font-bold text-blue-400">📷</span>
-                    <span>
-                      <strong className="text-white">Scannable by Any Camera:</strong> Built with QR Error Correction &apos;H&apos; (30% tolerance). Scans instantly in iOS Camera, Google Lens, Samsung Camera, and WhatsApp.
+                      <strong className="text-white">Instant 1-Tap Calling:</strong> In an accident or panic, bystanders don&apos;t want to hand-type a 10-digit phone number. Scanning pops up an instant <strong>&quot;Call Family&quot;</strong> button on their phone.
                     </span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="font-bold text-purple-400">🔒</span>
                     <span>
-                      <strong className="text-white">100% Offline Plain Text:</strong> Contains no shady web links. Scanning reveals pure emergency contact information right on the scanner screen.
+                      <strong className="text-white">Protects Your Privacy on Lock Screen:</strong> In Privacy Mode, random strangers sitting next to you on a bus or metro cannot read your phone number or notes. Only someone scanning in an emergency sees them.
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="font-bold text-red-400">🚨</span>
+                    <span>
+                      <strong className="text-white">Universal SOS Center Emblem:</strong> The prominent &quot;SOS&quot; emblem is universally recognized by police, paramedics, security guards, and civilians for any crisis (detention, accident, stalking, medical).
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="font-bold text-blue-400">📷</span>
+                    <span>
+                      <strong className="text-white">Scans on Any Phone:</strong> Uses QR Error Correction Level &apos;H&apos;. Works with standard iPhone Camera, Android Google Lens, Samsung Camera, and WhatsApp.
                     </span>
                   </li>
                 </ul>
@@ -834,8 +956,8 @@ export default function QRCardPage() {
               <div className="mt-3 flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-left">
                 <Smartphone className="h-5 w-5 flex-shrink-0 text-emerald-400" />
                 <p className="text-xs text-white/70">
-                  <strong className="text-emerald-400">Lifesaver Tip:</strong> Set this badge as your{' '}
-                  <span className="text-white font-medium">Phone Lock Screen Wallpaper</span> so emergency personnel can see your blood group and call your family even if your phone is locked!
+                  <strong className="text-emerald-400">Lock Screen Tip:</strong> Set this image as your{' '}
+                  <span className="text-white font-medium">Phone Lock Screen Wallpaper</span>. If your phone is locked or snatched, any helper can point their camera to call your emergency contacts!
                 </p>
               </div>
             </div>
@@ -849,16 +971,16 @@ export default function QRCardPage() {
           </h3>
           <ol className="space-y-1.5 text-xs leading-relaxed text-white/50">
             <li>
-              1. {t('step_1', 'Fill in your emergency medical information above / ऊपर अपनी आपातकालीन जानकारी भरें')}
+              1. {t('step_1', 'Fill in your emergency details and contacts above / ऊपर अपनी आपातकालीन जानकारी भरें')}
             </li>
             <li>
-              2. {t('step_2', 'Tap "Save & Generate Medical ID Badge" to render your card / बैज बनाएं दबाएं')}
+              2. {t('step_2', 'Choose Privacy Mode (recommended for lockscreen) or Open Badge / मोड चुनें')}
             </li>
             <li>
-              3. {t('step_3', 'Download and set as your phone lock screen or print for wallet / डाउनलोड करके लॉक स्क्रीन पर लगाएं')}
+              3. {t('step_3', 'Tap "Save & Generate Emergency ID Badge" / बैज बनाएं दबाएं')}
             </li>
             <li>
-              4. {t('step_4', 'Keep a copy in your purse, wallet, or backpack / अपने पर्स या बैग में एक कॉपी रखें')}
+              4. {t('step_4', 'Download and set as Phone Lock Screen Wallpaper or print for wallet / डाउनलोड करके लॉक स्क्रीन पर लगाएं')}
             </li>
           </ol>
         </section>
