@@ -16,6 +16,10 @@ import {
   Link2,
   RefreshCw,
   Delete,
+  MapPin,
+  Radio,
+  Timer,
+  Navigation,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n';
 import { getItem, setItem, removeItem, StorageKeys } from '@/lib/storage';
@@ -294,14 +298,70 @@ function ActiveSession({
   const [expiresIn, setExpiresIn] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<string | null>(null);
+
+  // Dead Man's Switch: Safety Interval (in minutes)
+  const [intervalMinutes, setIntervalMinutes] = useState<number>(() => {
+    const saved = getItem<number>(StorageKeys.CHECKIN_INTERVAL);
+    return saved && [15, 30, 60].includes(saved) ? saved : 15;
+  });
+
+  // Countdown to next check-in
+  const [countdownState, setCountdownState] = useState<{
+    text: string;
+    isOverdue: boolean;
+    isUrgent: boolean;
+  }>({
+    text: '',
+    isOverdue: false,
+    isUrgent: false,
+  });
+
+  // Live Journey Mode: Background GPS Breadcrumbs
+  const [isJourneyTracking, setIsJourneyTracking] = useState(true);
+  const [lastGpsPingTime, setLastGpsPingTime] = useState<string | null>(null);
+  const [isPingingGps, setIsPingingGps] = useState(false);
+
   const queuedActionRef = useRef<QueuedAction | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Live time updater
+  const handleIntervalChange = (mins: number) => {
+    setIntervalMinutes(mins);
+    setItem(StorageKeys.CHECKIN_INTERVAL, mins);
+    triggerHaptic();
+  };
+
+  // Live time and countdown updater
   useEffect(() => {
     const update = () => {
       if (statusData.last_checkin_at) {
         setTimeSinceCheckin(formatTimeSince(statusData.last_checkin_at));
+
+        // Dead Man's Switch countdown
+        const checkinDueAt =
+          new Date(statusData.last_checkin_at).getTime() + intervalMinutes * 60 * 1000;
+        const diff = checkinDueAt - Date.now();
+
+        if (diff <= 0) {
+          const overdueSec = Math.floor(Math.abs(diff) / 1000);
+          const overdueMin = Math.floor(overdueSec / 60);
+          setCountdownState({
+            text:
+              overdueMin > 0
+                ? `${overdueMin}m ${overdueSec % 60}s overdue`
+                : `${overdueSec}s overdue`,
+            isOverdue: true,
+            isUrgent: true,
+          });
+        } else {
+          const sec = Math.floor(diff / 1000);
+          const min = Math.floor(sec / 60);
+          const remSec = sec % 60;
+          setCountdownState({
+            text: `${min}m ${remSec < 10 ? '0' : ''}${remSec}s`,
+            isOverdue: false,
+            isUrgent: diff <= 3 * 60 * 1000, // < 3 mins
+          });
+        }
       }
       if (statusData.expires_at) {
         setExpiresIn(formatTimeUntil(statusData.expires_at));
@@ -314,9 +374,51 @@ function ActiveSession({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [statusData.last_checkin_at, statusData.expires_at]);
+  }, [statusData.last_checkin_at, statusData.expires_at, intervalMinutes]);
 
-  // Auto-refresh status data
+  // Live Journey Mode: Auto GPS Breadcrumb Heartbeat (every 45s)
+  useEffect(() => {
+    if (!isJourneyTracking || !isOnline) return;
+
+    let isSubscribed = true;
+
+    const pingLocation = async () => {
+      try {
+        setIsPingingGps(true);
+        const link = await getLocationLink();
+        if (link && isSubscribed) {
+          await fetch(`/api/status/${uuid}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              passcode,
+              location_link: link,
+              update_checkin: false, // Does NOT reset Dead Man's Switch timer
+            }),
+          });
+          if (isSubscribed) {
+            setLastGpsPingTime(
+              new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            );
+          }
+        }
+      } catch {
+        // Silent fail for background GPS query
+      } finally {
+        if (isSubscribed) setIsPingingGps(false);
+      }
+    };
+
+    pingLocation();
+    const beaconInterval = setInterval(pingLocation, 45000);
+
+    return () => {
+      isSubscribed = false;
+      clearInterval(beaconInterval);
+    };
+  }, [isJourneyTracking, isOnline, uuid, passcode]);
+
+  // Auto-refresh status data from server
   useEffect(() => {
     if (!isOnline) return;
 
@@ -351,13 +453,23 @@ function ActiveSession({
       setActionError(null);
       triggerHaptic();
 
+      // Automatically attach fresh GPS location on check-in
+      let freshLoc: string | null = locationLink ?? null;
+      if (!freshLoc) {
+        try {
+          freshLoc = await getLocationLink();
+        } catch {
+          // Continue if location unavailable
+        }
+      }
+
       // If offline, queue the action
       if (!isOnline) {
         queuedActionRef.current = {
           type: 'checkin',
           status,
           message: msg || message,
-          location_link: locationLink ?? null,
+          location_link: freshLoc,
           timestamp: Date.now(),
         };
         setIsCheckingIn(false);
@@ -368,9 +480,10 @@ function ActiveSession({
       }
 
       try {
-        const body: Record<string, string | null> = {
+        const body: Record<string, unknown> = {
           passcode,
           status,
+          update_checkin: true,
         };
 
         const finalMessage = msg !== undefined ? msg : message;
@@ -378,20 +491,8 @@ function ActiveSession({
           body.message = finalMessage;
         }
 
-        if (status === 'need_help') {
-          // Try to get location for need_help
-          try {
-            const loc = locationLink ?? (await getLocationLink());
-            if (loc) {
-              body.location_link = loc;
-            }
-          } catch {
-            // Location unavailable, continue without it
-          }
-        }
-
-        if (locationLink !== undefined) {
-          body.location_link = locationLink;
+        if (freshLoc) {
+          body.location_link = freshLoc;
         }
 
         const res = await fetch(`/api/status/${uuid}`, {
@@ -410,11 +511,10 @@ function ActiveSession({
         setMessage('');
         setLastAction(
           status === 'safe'
-            ? t('markedSafe', '✅ सुरक्षित चिह्नित किया गया', '✅ Marked as Safe')
+            ? t('markedSafe', '✅ सुरक्षित चिह्नित किया गया — लाइव GPS अपडेट हुआ', '✅ Marked as Safe — Live GPS updated')
             : t('markedNeedHelp', '🚨 मदद अनुरोध भेजा गया', '🚨 Help request sent')
         );
 
-        // Clear last action message after 3 seconds
         setTimeout(() => setLastAction(null), 3000);
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : 'Check-in failed';
@@ -453,7 +553,9 @@ function ActiveSession({
     }
   };
 
-  const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/check-in/${uuid}` : '';
+  const shareUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/check-in/${uuid}?interval=${intervalMinutes}`
+    : '';
 
   const handleCopy = async () => {
     try {
@@ -462,7 +564,6 @@ function ActiveSession({
       triggerHaptic();
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback: select text
       const input = document.createElement('input');
       input.value = shareUrl;
       document.body.appendChild(input);
@@ -476,9 +577,9 @@ function ActiveSession({
 
   const handleWhatsAppShare = () => {
     const text = t(
-      'whatsappMsg',
-      `मेरी सुरक्षा स्थिति यहाँ देखें: ${shareUrl}`,
-      `Check my safety status here: ${shareUrl}`
+      'whatsappMsgWithInterval',
+      `मेरी सुरक्षा स्थिति लाइव ट्रैक करें: ${shareUrl}\n(सफ़र सुरक्षा: अगर मैं हर ${intervalMinutes} मिनट में चेक-इन नहीं करती हूँ, तो इस लिंक पर इमरजेंसी अलार्म और मेरा आखिरी GPS स्थान सक्रिय हो जाएगा)`,
+      `Track my safety status live: ${shareUrl}\n(Safety Timer: If I don't check in every ${intervalMinutes} minutes, an emergency alert will trigger with my last recorded GPS coordinates)`
     );
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
@@ -504,17 +605,133 @@ function ActiveSession({
       )}
 
       <div className="flex-1 px-4 py-6 max-w-lg mx-auto w-full">
+        {/* Dead Man's Switch Urgency / Overdue Banner */}
+        {countdownState.isOverdue && (
+          <div className="mb-6 bg-red-600/20 border-2 border-red-500 rounded-2xl p-4 text-center animate-pulse">
+            <div className="flex items-center justify-center gap-2 text-red-400 font-bold text-base mb-1">
+              <AlertTriangle className="w-5 h-5 text-red-500" />
+              <span>{t('overdueTitle', '⚠️ चेक-इन समय समाप्त! इमरजेंसी अलार्म चालू है', '⚠️ Check-in Overdue! Emergency Alert Active')}</span>
+            </div>
+            <p className="text-sm text-neutral-300">
+              {t(
+                'overdueDesc',
+                'आपके संपर्कों को अब लाल इमरजेंसी अलार्म और आपका अंतिम GPS स्थान दिख रहा है। अलार्म बंद करने के लिए नीचे "मैं सुरक्षित हूँ" दबाएं।',
+                'Your contacts now see a red danger alert with your last GPS location. Tap "I\'m Safe" below to disarm.'
+              )}
+            </p>
+          </div>
+        )}
+
+        {countdownState.isUrgent && !countdownState.isOverdue && (
+          <div className="mb-6 bg-amber-500/20 border border-amber-500/50 rounded-2xl p-3.5 text-center">
+            <div className="flex items-center justify-center gap-2 text-amber-300 font-semibold text-sm">
+              <Timer className="w-4 h-4 text-amber-400" />
+              <span>
+                {t('urgentPrompt', 'चेक-इन का समय होने वाला है:', 'Check-in due soon:')}{' '}
+                <span className="font-mono font-bold text-white">{countdownState.text}</span>
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Status display */}
         <div className="text-center mb-6">
-          <StatusBadge status={currentStatus} size="lg" pulse={currentStatus === 'need_help'} />
-          <div className="mt-4 flex items-center justify-center gap-2 text-neutral-400">
-            <Clock className="w-4 h-4" />
-            <span className="text-sm">
+          <StatusBadge status={currentStatus} size="lg" pulse={currentStatus === 'need_help' || countdownState.isOverdue} />
+          
+          {/* Dead Man's Switch Countdown */}
+          <div className="mt-4 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-neutral-900 border border-neutral-800 text-sm">
+            <Timer className={`w-4 h-4 ${countdownState.isOverdue ? 'text-red-400 animate-spin' : countdownState.isUrgent ? 'text-amber-400' : 'text-emerald-400'}`} />
+            <span className="text-neutral-400">{t('nextDue', 'अगला चेक-इन:', 'Next check-in:')}</span>
+            <span className={`font-mono font-bold ${countdownState.isOverdue ? 'text-red-400' : countdownState.isUrgent ? 'text-amber-300' : 'text-white'}`}>
+              {countdownState.text}
+            </span>
+          </div>
+
+          <div className="mt-2 flex items-center justify-center gap-2 text-neutral-400">
+            <Clock className="w-3.5 h-3.5" />
+            <span className="text-xs">
               {t('lastCheckin', 'पिछला चेक-इन', 'Last check-in')}: <span className="text-white font-mono">{timeSinceCheckin}</span> {t('ago', 'पहले', 'ago')}
             </span>
           </div>
-          <div className="mt-1 text-sm text-neutral-500">
-            {t('expiresIn', 'समाप्त होगा', 'Expires in')}: <span className="font-mono">{expiresIn}</span>
+        </div>
+
+        {/* Safety Timer Selector (Dead Man's Switch Interval) */}
+        <div className="bg-neutral-900/90 border border-neutral-800 rounded-2xl p-4 mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+              <Timer className="w-3.5 h-3.5 text-emerald-400" />
+              {t('safetyTimer', 'सुरक्षा टाइमर (Dead Man\'s Switch)', 'Safety Timer (Dead Man\'s Switch)')}
+            </span>
+            <span className="text-xs text-neutral-500 font-mono">{intervalMinutes}m</span>
+          </div>
+          <p className="text-xs text-neutral-400 mb-3 leading-relaxed">
+            {t(
+              'timerExplainer',
+              'यदि आप इस समय सीमा के भीतर चेक-इन नहीं करती हैं, तो यह सिस्टम स्वतः ही आपके संपर्कों को लाल खतरे का अलार्म और अंतिम GPS स्थान दिखा देगा।',
+              'If you fail to check in within this time, the system automatically triggers a red emergency alarm with your last GPS location.'
+            )}
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { val: 15, label: t('timer15', '15 मिनट\n(कैब/अकेले)', '15 mins\n(Cab/Night)') },
+              { val: 30, label: t('timer30', '30 मिनट\n(सफ़र)', '30 mins\n(Commute)') },
+              { val: 60, label: t('timer60', '60 मिनट\n(सामान्य)', '60 mins\n(Standard)') },
+            ].map(({ val, label }) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => handleIntervalChange(val)}
+                className={`py-2 px-1 text-xs rounded-xl font-medium transition-all whitespace-pre-line text-center border ${
+                  intervalMinutes === val
+                    ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400 font-bold'
+                    : 'bg-neutral-800/80 border-neutral-700 text-neutral-300 hover:bg-neutral-800'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Live Journey Tracking (Auto GPS Breadcrumbs) */}
+        <div className="bg-neutral-900/90 border border-neutral-800 rounded-2xl p-4 mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isJourneyTracking ? 'bg-emerald-500/20 text-emerald-400' : 'bg-neutral-800 text-neutral-500'}`}>
+                <Navigation className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-white">
+                  {t('liveGpsBeacon', 'ऑटो GPS ट्रैकिंग (सफ़र मोड)', 'Auto GPS Breadcrumbs')}
+                </h2>
+                <p className="text-xs text-neutral-400">
+                  {isJourneyTracking
+                    ? isPingingGps
+                      ? t('gpsPinging', '🔄 GPS सिंक हो रहा है...', '🔄 Syncing GPS location...')
+                      : lastGpsPingTime
+                      ? `${t('lastGpsPing', 'अंतिम GPS:', 'Last GPS:')} ${lastGpsPingTime}`
+                      : t('gpsActive', '🟢 हर 45 सेकंड में ऑटो-अपडेट सक्रिय', '🟢 Auto-syncs every 45s')
+                    : t('gpsOff', 'बंद है', 'Disabled')}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsJourneyTracking((prev) => !prev);
+                triggerHaptic();
+              }}
+              className={`w-12 h-7 rounded-full transition-colors relative focus:outline-none ${
+                isJourneyTracking ? 'bg-emerald-600' : 'bg-neutral-700'
+              }`}
+              aria-label={t('toggleGps', 'GPS ट्रैकिंग टॉगल करें', 'Toggle GPS Tracking')}
+            >
+              <div
+                className={`w-5 h-5 rounded-full bg-white transition-transform transform ${
+                  isJourneyTracking ? 'translate-x-6' : 'translate-x-1'
+                } top-1 absolute`}
+              />
+            </button>
           </div>
         </div>
 
@@ -537,7 +754,7 @@ function ActiveSession({
           <button
             onClick={() => handleCheckIn('safe')}
             disabled={isCheckingIn}
-            className="w-full h-20 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:bg-emerald-800 disabled:opacity-50 text-white font-bold text-xl rounded-2xl transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A]"
+            className="w-full h-20 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:bg-emerald-800 disabled:opacity-50 text-white font-bold text-xl rounded-2xl transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] shadow-lg shadow-emerald-950/40"
             aria-label={t('imSafe', 'मैं सुरक्षित हूँ', 'I\'m Safe')}
           >
             {isCheckingIn ? (
@@ -553,7 +770,7 @@ function ActiveSession({
           <button
             onClick={() => handleCheckIn('need_help')}
             disabled={isCheckingIn}
-            className="w-full h-20 bg-red-600 hover:bg-red-500 active:bg-red-700 disabled:bg-red-800 disabled:opacity-50 text-white font-bold text-xl rounded-2xl transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A]"
+            className="w-full h-20 bg-red-600 hover:bg-red-500 active:bg-red-700 disabled:bg-red-800 disabled:opacity-50 text-white font-bold text-xl rounded-2xl transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] shadow-lg shadow-red-950/40"
             aria-label={t('needHelp', 'मदद चाहिए', 'Need Help')}
           >
             {isCheckingIn ? (
@@ -579,7 +796,7 @@ function ActiveSession({
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             maxLength={200}
-            placeholder={t('messagePlaceholder', 'जैसे: घर पहुँच गई', 'e.g., Reached home safely')}
+            placeholder={t('messagePlaceholder', 'जैसे: कैब में बैठी हूँ, घर जा रही हूँ', 'e.g., In cab DL-1Y-1234, heading home')}
             className="w-full h-12 bg-neutral-900 border border-neutral-800 rounded-xl px-4 text-base text-white placeholder-neutral-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
           />
           <p className="text-xs text-neutral-600 mt-1 text-right">{message.length}/200</p>
@@ -587,9 +804,14 @@ function ActiveSession({
 
         {/* Share section */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 mb-6">
-          <div className="flex items-center gap-2 text-sm text-neutral-400 mb-3">
-            <Link2 className="w-4 h-4" />
-            {t('shareLink', 'लिंक साझा करें', 'Share your link')}
+          <div className="flex items-center justify-between text-sm text-neutral-400 mb-3">
+            <div className="flex items-center gap-2">
+              <Link2 className="w-4 h-4" />
+              <span>{t('shareLink', 'लाइव मॉनिटर लिंक', 'Live Monitor Link')}</span>
+            </div>
+            <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+              {intervalMinutes}m timer
+            </span>
           </div>
 
           <div className="bg-neutral-800 rounded-xl px-3 py-2.5 mb-3 flex items-center gap-2 overflow-hidden">

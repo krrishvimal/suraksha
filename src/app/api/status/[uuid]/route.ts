@@ -104,11 +104,12 @@ export async function PATCH(
       );
     }
 
-    const { passcode, status, message, location_link } = body as {
+    const { passcode, status, message, location_link, update_checkin } = body as {
       passcode?: string;
       status?: string;
       message?: string;
       location_link?: string;
+      update_checkin?: boolean;
     };
 
     if (!passcode || typeof passcode !== 'string') {
@@ -118,9 +119,9 @@ export async function PATCH(
       );
     }
 
-    if (!status || !['safe', 'need_help'].includes(status)) {
+    if (status && !['safe', 'need_help', 'active'].includes(status)) {
       return NextResponse.json(
-        { error: 'Status must be "safe" or "need_help" / स्थिति "safe" या "need_help" होनी चाहिए' },
+        { error: 'Status must be "safe", "need_help", or "active" / स्थिति "safe", "need_help", या "active" होनी चाहिए' },
         { status: 400 }
       );
     }
@@ -160,10 +161,18 @@ export async function PATCH(
     }
 
     // Build update payload
-    const updatePayload: Record<string, string | null> = {
-      status,
-      last_checkin_at: new Date().toISOString(),
-    };
+    const updatePayload: Record<string, string | null> = {};
+
+    if (status) {
+      updatePayload.status = status;
+    }
+
+    // Update last_checkin_at if status provided or update_checkin === true
+    // If update_checkin is false (background GPS breadcrumb), do not reset check-in timer
+    const shouldUpdateCheckin = update_checkin !== false && (status !== undefined || update_checkin === true);
+    if (shouldUpdateCheckin) {
+      updatePayload.last_checkin_at = new Date().toISOString();
+    }
 
     if (message !== undefined) {
       updatePayload.message = message || null;

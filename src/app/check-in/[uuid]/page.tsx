@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import {
   Shield,
   ShieldAlert,
@@ -13,9 +13,12 @@ import {
   RefreshCw,
   AlertTriangle,
   ExternalLink,
+  PhoneCall,
+  Navigation,
+  Timer,
+  AlertOctagon,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n';
-import { STATUS_THRESHOLDS } from '@/lib/constants';
 import StatusBadge from '@/components/StatusBadge';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -65,17 +68,17 @@ function getTimeSinceMs(isoDate: string): number {
   return Date.now() - new Date(isoDate).getTime();
 }
 
-function computeDisplayStatus(data: StatusPageData): DisplayStatus {
-  // If explicitly need_help, always show that
+function computeDisplayStatus(data: StatusPageData, intervalMinutes: number = 30): DisplayStatus {
+  // If explicitly need_help, always trigger red emergency
   if (data.status === 'need_help') return 'need_help';
 
   const timeSinceMs = getTimeSinceMs(data.last_checkin_at);
-  const warningMs = STATUS_THRESHOLDS.warning * 60 * 60 * 1000; // 1 hour
-  const dangerMs = STATUS_THRESHOLDS.danger * 60 * 60 * 1000;   // 2 hours
+  const dangerMs = intervalMinutes * 60 * 1000;
+  const warningMs = dangerMs * 0.7; // Warning in final 30% of interval
 
-  // No recent check-in → stale
-  if (timeSinceMs > dangerMs) return 'need_help'; // Red after 2 hours
-  if (timeSinceMs > warningMs) return 'stale';    // Yellow after 1 hour
+  // Dead Man's Switch: if check-in deadline missed, turn RED immediately
+  if (timeSinceMs > dangerMs) return 'need_help';
+  if (timeSinceMs > warningMs) return 'stale';
 
   return 'safe';
 }
@@ -202,14 +205,17 @@ function ErrorView({ onRetry }: { onRetry: () => void }) {
 function PublicStatusContent() {
   const { t } = useLanguage();
   const params = useParams();
+  const searchParams = useSearchParams();
   const uuid = typeof params?.uuid === 'string' ? params.uuid : '';
+
+  const intervalParam = searchParams.get('interval') || searchParams.get('t');
+  const intervalMinutes = intervalParam ? parseInt(intervalParam, 10) || 30 : 30;
 
   const [pageState, setPageState] = useState<PageState>('loading');
   const [data, setData] = useState<StatusPageData | null>(null);
   const [timeSinceCheckin, setTimeSinceCheckin] = useState('');
   const [expiresIn, setExpiresIn] = useState('');
   const [displayStatus, setDisplayStatus] = useState<DisplayStatus>('unknown');
-  const [lastRefresh, setLastRefresh] = useState<number>(Date.now());
 
   const fetchStatus = useCallback(async () => {
     if (!uuid) {
@@ -231,16 +237,14 @@ function PublicStatusContent() {
 
       const result = await res.json();
       setData(result);
-      setDisplayStatus(computeDisplayStatus(result));
+      setDisplayStatus(computeDisplayStatus(result, intervalMinutes));
       setPageState('loaded');
-      setLastRefresh(Date.now());
     } catch {
       if (pageState === 'loading') {
         setPageState('error');
       }
-      // If already loaded, silently fail (stale data better than no data)
     }
-  }, [uuid, pageState]);
+  }, [uuid, pageState, intervalMinutes]);
 
   // Initial fetch
   useEffect(() => {
@@ -265,14 +269,13 @@ function PublicStatusContent() {
     const update = () => {
       setTimeSinceCheckin(formatTimeSince(data.last_checkin_at));
       setExpiresIn(formatTimeUntil(data.expires_at));
-      // Also re-compute display status based on time thresholds
-      setDisplayStatus(computeDisplayStatus(data));
+      setDisplayStatus(computeDisplayStatus(data, intervalMinutes));
     };
 
     update();
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
-  }, [data]);
+  }, [data, intervalMinutes]);
 
   // ─── Render states ─────────────────────────────────────────────────────────
 
@@ -299,36 +302,39 @@ function PublicStatusContent() {
 
   if (!data) return null;
 
+  const isExplicitNeedHelp = data.status === 'need_help';
+  const isMissedCheckin = displayStatus === 'need_help' && !isExplicitNeedHelp;
+
   const statusTextMap: Record<DisplayStatus, string> = {
-    safe: t('statusSafe', 'सुरक्षित', 'Safe'),
-    need_help: data.status === 'need_help'
-      ? t('statusNeedHelp', 'मदद चाहिए', 'Needs Help')
-      : t('statusNoRecentUpdate', 'कोई हाल का अपडेट नहीं', 'No Recent Update'),
-    stale: t('statusNoRecentUpdate', 'कोई हाल का अपडेट नहीं', 'No Recent Update'),
+    safe: t('statusSafe', 'सुरक्षित (Safe)', 'Safe'),
+    need_help: isExplicitNeedHelp
+      ? t('statusNeedHelp', '🚨 मदद का अनुरोध (SOS)', '🚨 Help Requested (SOS)')
+      : t('statusMissedCheckin', '⚠️ मिस्ड चेक-इन / खतरा अलार्म', '⚠️ Missed Check-In Alert'),
+    stale: t('statusCheckinDueSoon', 'चेक-इन का समय होने वाला है', 'Check-In Due Soon'),
     unknown: t('statusUnknown', 'अज्ञात', 'Unknown'),
   };
 
   const statusDescMap: Record<DisplayStatus, string> = {
     safe: t(
       'descSafe',
-      'इस व्यक्ति ने हाल ही में चेक-इन किया है और सुरक्षित है।',
-      'This person has checked in recently and is safe.'
+      `इस व्यक्ति ने हाल ही में चेक-इन किया है और सुरक्षित है। (सुरक्षा टाइमर: हर ${intervalMinutes} मिनट)`,
+      `This person checked in recently and is safe. (Safety interval: every ${intervalMinutes} mins)`
     ),
-    need_help: data.status === 'need_help'
+    need_help: isExplicitNeedHelp
       ? t(
           'descNeedHelp',
-          'इस व्यक्ति ने मदद का अनुरोध किया है। कृपया तुरंत संपर्क करें।',
-          'This person has requested help. Please contact them immediately.'
+          'इस व्यक्ति ने मदद का बटन दबाया है! कृपया तुरंत संपर्क करें या आपातकालीन सेवा को सूचित करें।',
+          'This person pressed the SOS Help button! Please contact them or alert emergency services.'
         )
       : t(
-          'descStaleRed',
-          'कोई हाल का चेक-इन नहीं। कृपया उनसे संपर्क करें।',
-          'No recent check-in. Please reach out to them.'
+          'descMissedCheckin',
+          `उपयोगकर्ता को हर ${intervalMinutes} मिनट में चेक-इन करना था और समय समाप्त हो चुका है। उनका फोन बंद, छीना हुआ या वे खतरे में हो सकते हैं।`,
+          `User was scheduled to check in every ${intervalMinutes} mins and has missed the deadline. Their phone may be off, snatched, or they may be in danger.`
         ),
     stale: t(
       'descStale',
-      'एक घंटे से अधिक समय से कोई चेक-इन नहीं। कृपया पुष्टि करें कि वे ठीक हैं।',
-      'No check-in for over an hour. Please verify they are okay.'
+      `अगले चेक-इन का समय होने वाला है। यदि समय पर चेक-इन नहीं हुआ, तो यह अलार्म लाल हो जाएगा।`,
+      `Next check-in is due soon. If not checked in on time, this alert will turn red automatically.`
     ),
     unknown: t('descUnknown', 'स्थिति अज्ञात है।', 'Status is unknown.'),
   };
@@ -340,28 +346,83 @@ function PublicStatusContent() {
       {/* Top gradient based on status */}
       <div className={`absolute inset-x-0 top-0 h-80 bg-gradient-to-b ${getStatusGradient(displayStatus)} pointer-events-none`} aria-hidden="true" />
 
-      <div className="relative z-10 max-w-lg mx-auto px-6 py-12">
+      <div className="relative z-10 max-w-lg mx-auto px-6 py-8">
+        {/* CRITICAL MISSED CHECK-IN / SOS DANGER BANNER */}
+        {displayStatus === 'need_help' && (
+          <div className="mb-6 bg-red-600/25 border-2 border-red-500 rounded-2xl p-4 text-center animate-pulse shadow-xl shadow-red-950/50">
+            <div className="flex items-center justify-center gap-2 text-red-400 font-bold text-lg mb-1.5">
+              <AlertTriangle className="w-6 h-6 text-red-500" />
+              <span>
+                {isExplicitNeedHelp
+                  ? t('bannerSos', '🚨 आपातकालीन SOS सक्रिय!', '🚨 EMERGENCY SOS ACTIVE!')
+                  : t('bannerDeadMan', '⚠️ मिस्ड चेक-इन: संभावित खतरा!', '⚠️ MISSED CHECK-IN: POTENTIAL DANGER!')}
+              </span>
+            </div>
+            <p className="text-sm text-neutral-200 leading-relaxed mb-4">
+              {isExplicitNeedHelp
+                ? t(
+                    'bannerSosDesc',
+                    'उपयोगकर्ता ने आपातकालीन सहायता का अनुरोध किया है। कृपया तुरंत संपर्क करें या पुलिस (112) को कॉल करें।',
+                    'User triggered an emergency SOS. Please call them or contact police (112) immediately.'
+                  )
+                : t(
+                    'bannerDeadManDesc',
+                    `उपयोगकर्ता ने ${intervalMinutes} मिनट के भीतर सुरक्षित चेक-इन नहीं किया। यदि वे कॉल नहीं उठा रहे हैं, तो नीचे दिए गए अंतिम GPS स्थान पर सहायता भेजें।`,
+                    `User failed to check in within the ${intervalMinutes}-min safety window. If unreachable, send help to their last recorded GPS position below.`
+                  )}
+            </p>
+
+            {/* Quick emergency call triggers */}
+            <div className="grid grid-cols-2 gap-2.5">
+              <a
+                href="tel:112"
+                className="h-12 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 text-sm shadow-md transition-colors"
+              >
+                <PhoneCall className="w-4 h-4" />
+                {t('call112', 'कॉल 112 (पुलिस)', 'Call 112 (Police)')}
+              </a>
+              <a
+                href="tel:1091"
+                className="h-12 bg-purple-700 hover:bg-purple-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 text-sm shadow-md transition-colors"
+              >
+                <PhoneCall className="w-4 h-4" />
+                {t('call1091', 'कॉल 1091 (महिला)', 'Call 1091 (Women)')}
+              </a>
+            </div>
+          </div>
+        )}
+
         {/* Status circle */}
-        <div className="flex justify-center mb-8">
+        <div className="flex justify-center mb-6">
           <StatusCircle status={displayStatus} />
         </div>
 
         {/* Status text */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <StatusBadge
             status={badgeStatus}
             size="lg"
             pulse={displayStatus === 'need_help'}
-            className="mb-4"
+            className="mb-3"
           />
 
-          <h1 className="text-3xl font-bold mb-2 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-bold mb-2 tracking-tight">
             {statusTextMap[displayStatus]}
           </h1>
 
-          <p className="text-neutral-400 text-lg leading-relaxed max-w-sm mx-auto">
+          <p className="text-neutral-400 text-base leading-relaxed max-w-sm mx-auto">
             {statusDescMap[displayStatus]}
           </p>
+        </div>
+
+        {/* Safety Interval Info Badge */}
+        <div className="flex items-center justify-center gap-2 mb-6">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-xs text-neutral-400">
+            <Timer className="w-3.5 h-3.5 text-emerald-400" />
+            <span>
+              {t('timerActive', 'सुरक्षा टाइमर:', 'Safety Timer:')} <strong className="text-white">{intervalMinutes} min</strong> Dead Man&apos;s Switch
+            </span>
+          </div>
         </div>
 
         {/* Time since last check-in */}
@@ -371,8 +432,8 @@ function PublicStatusContent() {
               <Clock className="w-5 h-5 text-neutral-400" />
             </div>
             <div className="flex-1">
-              <p className="text-sm text-neutral-500">
-                {t('lastCheckin', 'पिछला चेक-इन', 'Last check-in')}
+              <p className="text-xs text-neutral-500 mb-0.5">
+                {t('lastCheckin', 'पिछला चेक-इन / अंतिम सिग्नल', 'Last check-in / Last signal')}
               </p>
               <p className="text-xl font-bold font-mono tracking-wide">
                 {timeSinceCheckin} <span className="text-sm font-normal text-neutral-500">{t('ago', 'पहले', 'ago')}</span>
@@ -389,8 +450,8 @@ function PublicStatusContent() {
                 <MessageCircle className="w-5 h-5 text-neutral-400" />
               </div>
               <div className="flex-1">
-                <p className="text-sm text-neutral-500 mb-1">
-                  {t('message', 'संदेश', 'Message')}
+                <p className="text-xs text-neutral-500 mb-1">
+                  {t('message', 'संदेश (Message)', 'Message')}
                 </p>
                 <p className="text-base text-white leading-relaxed">
                   {data.message}
@@ -400,36 +461,82 @@ function PublicStatusContent() {
           </div>
         )}
 
-        {/* Location */}
-        {data.location_link && (
-          <a
-            href={data.location_link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block bg-neutral-900/80 border border-neutral-800 hover:border-blue-500/30 rounded-2xl p-5 mb-4 transition-colors group"
-            aria-label={t('viewLocation', 'स्थान देखें', 'View location on map')}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
-                <MapPin className="w-5 h-5 text-blue-400" />
+        {/* LAST RECORDED GPS LOCATION BREADCRUMB */}
+        {data.location_link ? (
+          <div className={`rounded-2xl p-5 mb-4 border transition-colors ${
+            displayStatus === 'need_help'
+              ? 'bg-red-950/30 border-red-500/50 shadow-lg shadow-red-950/30'
+              : 'bg-neutral-900/80 border-neutral-800'
+          }`}>
+            <div className="flex items-start gap-3 mb-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                displayStatus === 'need_help' ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'
+              }`}>
+                <MapPin className="w-5 h-5" />
               </div>
               <div className="flex-1">
-                <p className="text-sm text-neutral-500 mb-0.5">
-                  {t('sharedLocation', 'साझा स्थान', 'Shared Location')}
+                <p className={`text-xs font-semibold uppercase tracking-wider mb-0.5 ${
+                  displayStatus === 'need_help' ? 'text-red-400' : 'text-neutral-400'
+                }`}>
+                  {displayStatus === 'need_help'
+                    ? t('lastKnownGpsTitle', '📍 अंतिम ज्ञात GPS स्थान (Last Known GPS)', '📍 Last Known GPS Position')
+                    : t('sharedLocation', 'साझा GPS स्थान (Live Location)', 'Live GPS Location')}
                 </p>
-                <p className="text-blue-400 text-sm flex items-center gap-1 group-hover:underline">
-                  {t('openMaps', 'मानचित्र पर देखें', 'Open in Maps')}
-                  <ExternalLink className="w-3.5 h-3.5" />
+                <p className="text-xs text-neutral-400">
+                  {t('recordedAgo', 'रिकॉर्ड किया गया:', 'Recorded:')} {timeSinceCheckin} {t('ago', 'पहले', 'ago')}
                 </p>
               </div>
             </div>
-          </a>
+
+            <a
+              href={data.location_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`w-full h-12 rounded-xl flex items-center justify-center gap-2 text-sm font-bold transition-all ${
+                displayStatus === 'need_help'
+                  ? 'bg-red-600 hover:bg-red-500 text-white shadow-md'
+                  : 'bg-blue-600 hover:bg-blue-500 text-white'
+              }`}
+              aria-label={t('viewLocation', 'मानचित्र पर देखें', 'View location on Google Maps')}
+            >
+              <Navigation className="w-4 h-4" />
+              <span>{t('openMapsNav', 'Google Maps पर देखें और नेविगेट करें', 'Open Google Maps & Navigate')}</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+
+            {displayStatus === 'need_help' && (
+              <p className="text-xs text-neutral-400 text-center mt-2.5">
+                {t(
+                  'gpsPoliceAdvice',
+                  'आपातकाल में यह लिंक पुलिस (112) या परिजनों को भेजें।',
+                  'In emergency, forward this map link to police (112) or family.'
+                )}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="bg-neutral-900/50 border border-neutral-800/80 rounded-2xl p-4 mb-4 text-center">
+            <p className="text-xs text-neutral-500">
+              {t('noLocation', 'इस चेक-इन के दौरान कोई GPS स्थान रिकॉर्ड नहीं हुआ।', 'No GPS location recorded for this check-in.')}
+            </p>
+          </div>
         )}
 
+        {/* Emergency contact helper */}
+        <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 mb-6">
+          <p className="text-xs text-neutral-400 text-center leading-relaxed">
+            {t(
+              'publicViewAdvice',
+              'यह पेज एक स्वचालित सुरक्षा मॉनिटर है। यदि स्थिति लाल हो जाती है और व्यक्ति फोन नहीं उठा रहा, तो तुरंत 112 पर कॉल करें।',
+              'This page is an automated safety monitor. If status turns red and the person does not answer calls, dial 112 immediately.'
+            )}
+          </p>
+        </div>
+
         {/* Expires notice */}
-        <div className="text-center mt-8 space-y-2">
-          <p className="text-sm text-neutral-600">
-            {t('expiresIn', 'समाप्त होगा', 'Expires in')}: <span className="font-mono text-neutral-500">{expiresIn}</span>
+        <div className="text-center mt-6 space-y-2">
+          <p className="text-xs text-neutral-600">
+            {t('expiresIn', 'सत्र समाप्त होगा', 'Session expires in')}: <span className="font-mono text-neutral-500">{expiresIn}</span>
           </p>
 
           <div className="flex items-center justify-center gap-1.5 text-xs text-neutral-600">
@@ -439,7 +546,7 @@ function PublicStatusContent() {
         </div>
 
         {/* Suraksha branding */}
-        <div className="text-center mt-12 pb-8">
+        <div className="text-center mt-10 pb-8">
           <div className="flex items-center justify-center gap-2 text-neutral-700">
             <Shield className="w-4 h-4" />
             <span className="text-xs font-medium tracking-wider uppercase">

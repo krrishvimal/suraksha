@@ -11,6 +11,7 @@ export enum StorageKeys {
   SOS_CONTACTS = 'suraksha_sos_contacts',
   CHECKIN_UUID = 'suraksha_checkin_uuid',
   CHECKIN_PASSCODE = 'suraksha_checkin_passcode',
+  CHECKIN_INTERVAL = 'suraksha_checkin_interval',
   LANGUAGE = 'suraksha_language',
 }
 
