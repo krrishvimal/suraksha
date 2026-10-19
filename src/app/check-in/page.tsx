@@ -20,10 +20,16 @@ import {
   Radio,
   Timer,
   Navigation,
+  Lock,
+  X,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n';
 import { getItem, setItem, removeItem, StorageKeys } from '@/lib/storage';
-import { getLocationLink } from '@/lib/geolocation';
+import {
+  getLocationLink,
+  GeolocationPermissionError,
+  checkLocationPermission,
+} from '@/lib/geolocation';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import StatusBadge from '@/components/StatusBadge';
 import FeatureGuide from '@/components/FeatureGuide';
@@ -396,6 +402,8 @@ function ActiveSession({
   const [isPingingGps, setIsPingingGps] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [hasAttemptedFirstGps, setHasAttemptedFirstGps] = useState(Boolean(initialData.location_link));
+  const [gpsPermissionDenied, setGpsPermissionDenied] = useState(false);
+  const [showUnblockHelpModal, setShowUnblockHelpModal] = useState(false);
   const hasOverduePingedRef = useRef(false);
 
   // Server-time offset synchronization to eliminate device clock skew
@@ -482,42 +490,143 @@ function ActiveSession({
     triggerHaptic();
   };
 
-  const pingLocation = useCallback(async () => {
-    if (!isJourneyTracking || !isOnline) return;
-    try {
-      setIsPingingGps(true);
-      setGpsError(null);
-      const link = await getLocationLink();
-      if (link) {
-        const res = await fetch(`/api/status/${uuid}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            passcode,
-            location_link: link,
-            update_checkin: false, // Does NOT reset Dead Man's Switch timer
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.server_time) {
-            syncServerOffset(data.server_time);
+  const pingLocation = useCallback(
+    async (isManualTrigger = false) => {
+      if (!isOnline) {
+        setActionError(
+          t(
+            'offlineGpsError',
+            'आप ऑफ़लाइन हैं — इंटरनेट कनेक्ट होने पर GPS अपडेट होगा',
+            'You are offline — GPS will sync when connected'
+          )
+        );
+        return;
+      }
+      if (!isManualTrigger && !isJourneyTracking) return;
+
+      try {
+        setIsPingingGps(true);
+        setGpsError(null);
+        triggerHaptic();
+
+        const link = await getLocationLink();
+        if (link) {
+          const res = await fetch(`/api/status/${uuid}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              passcode,
+              location_link: link,
+              update_checkin: false, // Does NOT reset Dead Man's Switch timer
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.server_time) {
+              syncServerOffset(data.server_time);
+            }
+            setStatusData((prev) => ({ ...prev, location_link: link }));
+            setLastGpsPingTime(
+              new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            );
+            setGpsPermissionDenied(false);
+            setGpsError(null);
+            if (isManualTrigger) {
+              setLastAction(
+                t('gpsLinkedSuccess', '📍 GPS लोकेशन सफलतापूर्वक जुड़ गई!', '📍 GPS location linked successfully!')
+              );
+              setTimeout(() => setLastAction(null), 4000);
+            }
           }
-          setStatusData((prev) => ({ ...prev, location_link: link }));
-          setLastGpsPingTime(
-            new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-          );
+        }
+      } catch (err) {
+        const isPermission =
+          err instanceof GeolocationPermissionError ||
+          (err instanceof Error &&
+            (err.message.toLowerCase().includes('denied') ||
+              err.message.toLowerCase().includes('permission')));
+        const msg = err instanceof Error ? err.message : 'Location access unavailable';
+        console.warn('GPS ping failed:', msg);
+
+        if (isPermission) {
+          setGpsPermissionDenied(true);
+          setGpsError(msg);
+          if (isManualTrigger) {
+            triggerHaptic();
+          }
+        } else {
+          setGpsError(msg);
+        }
+      } finally {
+        setIsPingingGps(false);
+        setHasAttemptedFirstGps(true);
+      }
+    },
+    [isJourneyTracking, isOnline, uuid, passcode, syncServerOffset, t]
+  );
+
+  // Permission status watcher (Permission API + tab focus listener)
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('permissions' in navigator) || !navigator.permissions?.query) {
+      return;
+    }
+
+    let permissionStatus: PermissionStatus | null = null;
+    navigator.permissions
+      .query({ name: 'geolocation' as PermissionName })
+      .then((status) => {
+        permissionStatus = status;
+        if (status.state === 'denied') {
+          setGpsPermissionDenied(true);
+        } else if (status.state === 'granted') {
+          setGpsPermissionDenied(false);
+        }
+
+        status.onchange = () => {
+          if (status.state === 'denied') {
+            setGpsPermissionDenied(true);
+          } else if (status.state === 'granted') {
+            setGpsPermissionDenied(false);
+            setGpsError(null);
+            pingLocation(true);
+          }
+        };
+      })
+      .catch(() => {});
+
+    return () => {
+      if (permissionStatus) {
+        permissionStatus.onchange = null;
+      }
+    };
+  }, [pingLocation]);
+
+  // Re-check permission when user returns to this tab (e.g. after toggling lock icon in URL bar)
+  useEffect(() => {
+    const handleRecheckPermission = async () => {
+      if (gpsPermissionDenied) {
+        const state = await checkLocationPermission();
+        if (state === 'granted') {
+          setGpsPermissionDenied(false);
+          setGpsError(null);
+          pingLocation(true);
         }
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Location access unavailable';
-      console.warn('GPS ping failed:', msg);
-      setGpsError(msg);
-    } finally {
-      setIsPingingGps(false);
-      setHasAttemptedFirstGps(true);
-    }
-  }, [isJourneyTracking, isOnline, uuid, passcode, syncServerOffset]);
+    };
+
+    window.addEventListener('focus', handleRecheckPermission);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        handleRecheckPermission();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('focus', handleRecheckPermission);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [gpsPermissionDenied, pingLocation]);
 
   // Live time and countdown updater
   useEffect(() => {
@@ -546,7 +655,7 @@ function ActiveSession({
           // Automatically broadcast emergency GPS location when timer expires
           if (!hasOverduePingedRef.current) {
             hasOverduePingedRef.current = true;
-            pingLocation();
+            pingLocation(true);
           }
         } else {
           hasOverduePingedRef.current = false;
@@ -579,10 +688,10 @@ function ActiveSession({
     if (!isJourneyTracking || !isOnline) return;
 
     // Ping immediately
-    pingLocation();
+    pingLocation(false);
 
     const pingIntervalMs = intervalMinutes === 1 ? 15000 : 45000;
-    const beaconInterval = setInterval(pingLocation, pingIntervalMs);
+    const beaconInterval = setInterval(() => pingLocation(false), pingIntervalMs);
 
     return () => clearInterval(beaconInterval);
   }, [isJourneyTracking, isOnline, intervalMinutes, pingLocation]);
@@ -838,37 +947,102 @@ function ActiveSession({
           defaultExpanded={false}
         />
 
-        {/* Prominent GPS Banner if location is genuinely missing after initial attempt */}
-        {!statusData.location_link && !isPingingGps && hasAttemptedFirstGps && (
-          <div className="rounded-2xl border border-sky-500/30 bg-sky-950/30 p-3.5 flex items-center justify-between gap-3 shadow-sm animate-in fade-in duration-200">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
-                <Navigation className={`w-4 h-4 ${isPingingGps ? 'animate-spin' : ''}`} />
+        {/* Prominent GPS Banner if location is missing */}
+        {!statusData.location_link && (
+          <>
+            {gpsPermissionDenied ? (
+              /* State A: Location Permission Denied in browser */
+              <div className="rounded-2xl border border-amber-500/40 bg-amber-950/30 p-3.5 sm:p-4 shadow-sm animate-in fade-in duration-200">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <Lock className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs sm:text-sm font-bold text-amber-200">
+                        {t('gpsBlockedTitle', 'लोकेशन अनुमति ब्लॉक है (ब्राउज़र)', 'Location Permission Blocked')}
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => setShowUnblockHelpModal(true)}
+                        className="text-[11px] text-amber-300 hover:text-amber-200 underline font-medium"
+                      >
+                        {t('howToFix', 'कैसे चालू करें?', 'How to fix?')}
+                      </button>
+                    </div>
+                    <p className="text-xs text-neutral-300 mt-1.5 leading-relaxed">
+                      {t(
+                        'gpsBlockedDesc',
+                        'ब्राउज़र ने लोकेशन रोक रखी है। ऊपर एड्रेस बार में 🔒 या 🎛️ सेटिंग्स आइकन पर टैप करके Location को "Allow" करें।',
+                        'Your browser blocked location. Tap the 🔒 lock or 🎛️ settings icon next to the address bar above and set Location to "Allow".'
+                      )}
+                    </p>
+                    <div className="mt-3 flex items-center flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => pingLocation(true)}
+                        disabled={isPingingGps}
+                        className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white font-semibold text-xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isPingingGps ? 'animate-spin' : ''}`} />
+                        <span>
+                          {isPingingGps
+                            ? t('checking', 'जांच रहे हैं...', 'Checking...')
+                            : t('retryGps', 'पुनः प्रयास करें', 'Retry GPS')}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowUnblockHelpModal(true)}
+                        className="px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium transition-colors"
+                      >
+                        {t('viewSteps', '📖 निर्देश देखें', '📖 Step-by-step Guide')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-xs sm:text-sm font-bold text-white truncate">
-                  {t('locationNotLinked', 'GPS लोकेशन अभी नहीं जुड़ी है', 'GPS Location Not Linked Yet')}
-                </p>
-                <p className="text-[11px] text-sky-300/70 truncate">
-                  {t('shareWithFamilyPrompt', 'परिवार को मैप दिखाने के लिए जोड़ें', 'Add your GPS to the family map')}
-                </p>
+            ) : (
+              /* State B: Ready to Share GPS or Currently Locating */
+              <div className="rounded-2xl border border-sky-500/30 bg-sky-950/30 p-3.5 flex items-center justify-between gap-3 shadow-sm animate-in fade-in duration-200">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
+                    <Navigation className={`w-4 h-4 ${isPingingGps ? 'animate-spin text-sky-300' : ''}`} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs sm:text-sm font-bold text-white truncate">
+                      {isPingingGps
+                        ? t('gettingGps', 'GPS खोज रहे हैं...', 'Locating GPS...')
+                        : t('locationNotLinked', 'GPS लोकेशन अभी नहीं जुड़ी है', 'GPS Location Not Linked Yet')}
+                    </p>
+                    <p className="text-[11px] text-sky-300/70 truncate">
+                      {isPingingGps
+                        ? t('detectingSatellite', 'सैटेलाइट और नेटवर्क से सिंक हो रहा है...', 'Syncing coordinates...')
+                        : t('shareWithFamilyPrompt', 'परिवार को मैप दिखाने के लिए जोड़ें', 'Add your GPS to the family map')}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => pingLocation(true)}
+                  disabled={isPingingGps}
+                  className="shrink-0 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-semibold text-xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                  aria-label={t('shareNow', 'अभी जोड़ें', 'Share GPS')}
+                >
+                  {isPingingGps ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <MapPin className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {isPingingGps
+                      ? t('gettingGpsShort', 'खोज रहे हैं...', 'Locating...')
+                      : t('shareNow', 'अभी जोड़ें', 'Share GPS')}
+                  </span>
+                </button>
               </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => pingLocation()}
-              disabled={isPingingGps}
-              className="shrink-0 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-semibold text-xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
-              aria-label={t('shareNow', 'अभी जोड़ें', 'Share GPS')}
-            >
-              <MapPin className="w-3.5 h-3.5" />
-              <span>
-                {isPingingGps
-                  ? t('gettingGps', 'खोज रहे हैं...', 'Locating...')
-                  : t('shareNow', 'अभी जोड़ें', 'Share GPS')}
-              </span>
-            </button>
-          </div>
+            )}
+          </>
         )}
 
         {/* Dead Man's Switch Urgency / Overdue Banner */}
@@ -1048,7 +1222,7 @@ function ActiveSession({
 
             <button
               type="button"
-              onClick={() => pingLocation()}
+              onClick={() => pingLocation(true)}
               disabled={isPingingGps}
               className="text-xs bg-neutral-800 hover:bg-neutral-700 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 font-medium"
             >
@@ -1063,9 +1237,18 @@ function ActiveSession({
               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <p className="font-medium">{gpsError}</p>
-                <p className="text-neutral-400 text-[11px] mt-0.5">
-                  {t('allowLocationHint', 'ब्राउज़र एड्रेस बार में 🔒 आइकन पर क्लिक करके लोकेशन की अनुमति दें।', 'Click the 🔒 icon in your browser URL bar to allow location access.')}
-                </p>
+                <div className="flex items-center justify-between mt-1 flex-wrap gap-1">
+                  <p className="text-neutral-400 text-[11px]">
+                    {t('allowLocationHint', 'ब्राउज़र एड्रेस बार में 🔒 आइकन पर क्लिक करके लोकेशन की अनुमति दें।', 'Click the 🔒 icon in your browser URL bar to allow location access.')}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowUnblockHelpModal(true)}
+                    className="text-[11px] text-amber-300 hover:underline shrink-0"
+                  >
+                    {t('howToFix', 'कैसे चालू करें?', 'How to fix?')}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1230,6 +1413,139 @@ function ActiveSession({
             </button>
           )}
         </div>
+
+        {/* Unblock Location Permission Modal */}
+        {showUnblockHelpModal && (
+          <div
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+            onClick={() => setShowUnblockHelpModal(false)}
+          >
+            <div
+              className="bg-neutral-900 border border-neutral-800 rounded-3xl max-w-md w-full p-6 text-left shadow-2xl relative max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-800 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <h3 className="font-bold text-white text-base">
+                    {t('unblockModalTitle', 'लोकेशन कैसे चालू करें', 'How to Allow Location')}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowUnblockHelpModal(false)}
+                  className="w-8 h-8 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white flex items-center justify-center text-sm transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-neutral-300 mb-4 leading-relaxed">
+                {t(
+                  'unblockModalIntro',
+                  'आपके ब्राउज़र ने लोकेशन अनुमति ब्लॉक कर रखी है। लाइव मैप जोड़ने के लिए नीचे दिए गए आसान चरणों का पालन करें:',
+                  'Your browser has blocked location access for this site. Follow these simple steps to allow it:'
+                )}
+              </p>
+
+              <div className="space-y-3 mb-5">
+                <div className="bg-neutral-950/60 border border-neutral-800 rounded-2xl p-3.5 flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                    1
+                  </span>
+                  <div className="text-xs">
+                    <p className="font-semibold text-white">
+                      {t('step1Title', 'एड्रेस बार में 🔒 या 🎛️ आइकन दबाएं', 'Tap the 🔒 Lock or 🎛️ Tune icon')}
+                    </p>
+                    <p className="text-neutral-400 mt-0.5">
+                      {t(
+                        'step1Desc',
+                        'ब्राउज़र में सबसे ऊपर वेबसाइट के नाम के पास बने 🔒 लॉक या सेटिंग्स आइकन पर क्लिक करें।',
+                        'Look at the top URL bar next to the website address.'
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-neutral-950/60 border border-neutral-800 rounded-2xl p-3.5 flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                    2
+                  </span>
+                  <div className="text-xs">
+                    <p className="font-semibold text-white">
+                      {t('step2Title', 'Permissions या Site Settings चुनें', 'Select "Permissions" or "Site Settings"')}
+                    </p>
+                    <p className="text-neutral-400 mt-0.5">
+                      {t(
+                        'step2Desc',
+                        'वहां "Location" (स्थान) अनुमति विकल्प देखें।',
+                        'Find the "Location" permission option.'
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-neutral-950/60 border border-neutral-800 rounded-2xl p-3.5 flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                    3
+                  </span>
+                  <div className="text-xs">
+                    <p className="font-semibold text-white">
+                      {t('step3Title', 'Location को "Allow" (अनुमति दें) करें', 'Change Location to "Allow"')}
+                    </p>
+                    <p className="text-neutral-400 mt-0.5">
+                      {t(
+                        'step3Desc',
+                        'ब्लॉक हटाकर अनुमति दें या "Reset permissions" दबाएं।',
+                        'Turn the toggle ON or reset permissions to allow.'
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-neutral-950/60 border border-neutral-800 rounded-2xl p-3.5 flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                    4
+                  </span>
+                  <div className="text-xs">
+                    <p className="font-semibold text-white">
+                      {t('step4Title', 'यहाँ वापस आएं', 'Return to this page')}
+                    </p>
+                    <p className="text-neutral-400 mt-0.5">
+                      {t(
+                        'step4Desc',
+                        'अनुमति बदलते ही ऐप अपने आप आपकी लोकेशन लिंक कर देगा!',
+                        'Suraksha will automatically detect it and link your GPS map!'
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUnblockHelpModal(false);
+                    pingLocation(true);
+                  }}
+                  className="flex-1 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white font-semibold text-sm transition-colors text-center"
+                >
+                  {t('retryNowBtn', 'पुनः प्रयास करें', 'Try GPS Again')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowUnblockHelpModal(false)}
+                  className="px-4 py-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-medium text-sm transition-colors"
+                >
+                  {t('close', 'बंद करें', 'Close')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

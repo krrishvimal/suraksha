@@ -17,6 +17,32 @@ const ERROR_MESSAGES: Record<number, string> = {
 const GEOLOCATION_TIMEOUT_MS = 10_000;
 
 /**
+ * Custom error thrown specifically when geolocation permission was blocked/denied by browser or user.
+ */
+export class GeolocationPermissionError extends Error {
+  readonly code = 1;
+  constructor(message = ERROR_MESSAGES[1]) {
+    super(message);
+    this.name = 'GeolocationPermissionError';
+  }
+}
+
+/**
+ * Query browser location permission state without triggering a prompt.
+ */
+export async function checkLocationPermission(): Promise<'granted' | 'denied' | 'prompt' | 'unsupported'> {
+  if (typeof navigator === 'undefined' || !('permissions' in navigator) || !navigator.permissions?.query) {
+    return 'unsupported';
+  }
+  try {
+    const status = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
+    return status.state;
+  } catch {
+    return 'unsupported';
+  }
+}
+
+/**
  * Get the user's current position using the browser Geolocation API.
  *
  * - Timeout: 10 seconds
@@ -46,7 +72,7 @@ export function getCurrentPosition(): Promise<Coordinates> {
       (error) => {
         // If user explicitly denied permission, fail immediately
         if (error.code === 1) {
-          reject(new Error(ERROR_MESSAGES[1]));
+          reject(new GeolocationPermissionError(ERROR_MESSAGES[1]));
           return;
         }
 
