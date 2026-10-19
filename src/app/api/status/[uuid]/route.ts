@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import bcrypt from 'bcryptjs';
-import type { StatusPageRow, CheckinStatus } from '@/lib/supabase';
+import {
+  decodeMessagePayload,
+  encodeMessagePayload,
+  type StatusPageRow,
+  type CheckinStatus,
+} from '@/lib/supabase';
 
 type RouteParams = { params: Promise<{ uuid: string }> };
 
@@ -105,10 +110,13 @@ export async function GET(
       );
     }
 
+    const { message: decodedMessage, interval_minutes } = decodeMessagePayload(row.message);
+
     return NextResponse.json({
       id: row.id,
       status: row.status,
-      message: row.message,
+      message: decodedMessage,
+      interval_minutes,
       location_link: row.location_link,
       last_checkin_at: row.last_checkin_at,
       created_at: row.created_at,
@@ -149,12 +157,13 @@ export async function PATCH(
       );
     }
 
-    const { passcode, status, message, location_link, update_checkin } = body as {
+    const { passcode, status, message, location_link, update_checkin, interval_minutes } = body as {
       passcode?: string;
       status?: string;
       message?: string;
       location_link?: string;
       update_checkin?: boolean;
+      interval_minutes?: number;
     };
 
     if (!passcode || typeof passcode !== 'string') {
@@ -173,10 +182,10 @@ export async function PATCH(
 
     const supabase = getSupabaseAdmin();
 
-    // Fetch the record with passcode_hash for verification
+    // Fetch the record with passcode_hash and message for verification & payload encoding
     const { data: existing, error: fetchError } = await supabase
       .from('status_pages')
-      .select('id, passcode_hash, expires_at')
+      .select('id, passcode_hash, expires_at, message')
       .eq('id', uuid)
       .single();
 
@@ -187,7 +196,12 @@ export async function PATCH(
       );
     }
 
-    const existingRow = existing as { id: string; passcode_hash: string; expires_at: string };
+    const existingRow = existing as {
+      id: string;
+      passcode_hash: string;
+      expires_at: string;
+      message: string | null;
+    };
 
     if (isExpired(existingRow.expires_at)) {
       return NextResponse.json(
@@ -234,8 +248,16 @@ export async function PATCH(
       updatePayload.last_checkin_at = new Date().toISOString();
     }
 
-    if (message !== undefined) {
-      updatePayload.message = message || null;
+    if (message !== undefined || interval_minutes !== undefined) {
+      const currentDecoded = decodeMessagePayload(existingRow.message);
+      const nextMessage =
+        message !== undefined ? (message ? message.trim() : null) : currentDecoded.message;
+      const nextInterval =
+        typeof interval_minutes === 'number' && [10, 15, 30, 60].includes(interval_minutes)
+          ? interval_minutes
+          : currentDecoded.interval_minutes;
+
+      updatePayload.message = encodeMessagePayload(nextMessage, nextInterval);
     }
 
     if (location_link !== undefined) {
@@ -258,11 +280,15 @@ export async function PATCH(
     }
 
     const updatedRow = updated as StatusPageRow;
+    const { message: decodedMessage, interval_minutes: returnedInterval } = decodeMessagePayload(
+      updatedRow.message
+    );
 
     return NextResponse.json({
       id: updatedRow.id,
       status: updatedRow.status,
-      message: updatedRow.message,
+      message: decodedMessage,
+      interval_minutes: returnedInterval,
       location_link: updatedRow.location_link,
       last_checkin_at: updatedRow.last_checkin_at,
       created_at: updatedRow.created_at,

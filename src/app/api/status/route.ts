@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import bcrypt from 'bcryptjs';
-import type { StatusPageRow } from '@/lib/supabase';
+import { encodeMessagePayload, type StatusPageRow } from '@/lib/supabase';
 
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const MAX_CREATIONS_PER_WINDOW = 5;
@@ -36,7 +36,11 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    const { passcode, location_link } = body as { passcode?: string; location_link?: string };
+    const { passcode, location_link, interval_minutes } = body as {
+      passcode?: string;
+      location_link?: string;
+      interval_minutes?: number;
+    };
 
     if (!passcode || typeof passcode !== 'string') {
       return NextResponse.json(
@@ -81,12 +85,18 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const nowIso = now.toISOString();
 
+    const initialInterval =
+      typeof interval_minutes === 'number' && [10, 15, 30, 60].includes(interval_minutes)
+        ? interval_minutes
+        : 10;
+    const initialMessage = encodeMessagePayload(null, initialInterval);
+
     const { data, error } = await supabase
       .from('status_pages')
       .insert({
         passcode_hash: passcodeHash,
         status: 'active',
-        message: null,
+        message: initialMessage,
         location_link: location_link || null,
         last_checkin_at: nowIso,
         expires_at: expiresAt.toISOString(),
@@ -112,6 +122,8 @@ export async function POST(request: Request): Promise<NextResponse> {
         expires_at: row.expires_at,
         last_checkin_at: row.last_checkin_at || nowIso,
         location_link: row.location_link || location_link || null,
+        message: null,
+        interval_minutes: initialInterval,
         server_time: new Date().toISOString(),
       },
       { status: 201 }

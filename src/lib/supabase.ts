@@ -19,6 +19,56 @@ export interface StatusPageRow {
   expires_at: string;
 }
 
+export interface DecodedStatusMessage {
+  message: string | null;
+  interval_minutes: number;
+}
+
+/**
+ * Encodes optional user message and active safety timer interval into the database text column.
+ */
+export function encodeMessagePayload(
+  userMessage?: string | null,
+  intervalMinutes?: number | null
+): string {
+  const cleanInterval =
+    typeof intervalMinutes === 'number' && [10, 15, 30, 60].includes(intervalMinutes)
+      ? intervalMinutes
+      : 10;
+  const cleanText = userMessage && typeof userMessage === 'string' ? userMessage.trim() : null;
+
+  return JSON.stringify({
+    text: cleanText,
+    interval: cleanInterval,
+  });
+}
+
+/**
+ * Decodes user message and active safety timer interval from the database text column.
+ * Handles both JSON structured payloads and legacy plain-text messages safely.
+ */
+export function decodeMessagePayload(rawMessage: string | null | undefined): DecodedStatusMessage {
+  if (!rawMessage || typeof rawMessage !== 'string') {
+    return { message: null, interval_minutes: 10 };
+  }
+
+  try {
+    const parsed = JSON.parse(rawMessage);
+    if (parsed && typeof parsed === 'object') {
+      const interval =
+        typeof parsed.interval === 'number' && [10, 15, 30, 60].includes(parsed.interval)
+          ? parsed.interval
+          : 10;
+      const text = typeof parsed.text === 'string' ? parsed.text : null;
+      return { message: text, interval_minutes: interval };
+    }
+  } catch {
+    // Legacy plain text message
+  }
+
+  return { message: rawMessage, interval_minutes: 10 };
+}
+
 export interface StatusPageInsert {
   id?: string;
   passcode_hash: string;

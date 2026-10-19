@@ -40,6 +40,7 @@ interface StatusData {
   id: string;
   status: 'safe' | 'need_help' | 'active';
   message: string | null;
+  interval_minutes?: number;
   location_link: string | null;
   last_checkin_at: string;
   created_at: string;
@@ -203,10 +204,17 @@ function CreateSession({ onCreated }: { onCreated: (data: StatusData) => void })
         console.warn('Initial GPS capture skipped or pending:', locErr);
       }
 
+      const savedInterval = getItem<number>(StorageKeys.CHECKIN_INTERVAL) || 10;
+      const initialInterval = [10, 15, 30, 60].includes(savedInterval) ? savedInterval : 10;
+
       const response = await fetch('/api/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ passcode, location_link: initialLocation }),
+        body: JSON.stringify({
+          passcode,
+          location_link: initialLocation,
+          interval_minutes: initialInterval,
+        }),
       });
 
       const data = await response.json();
@@ -381,6 +389,9 @@ function ActiveSession({
 
   // Dead Man's Switch: Safety Interval (in minutes)
   const [intervalMinutes, setIntervalMinutes] = useState<number>(() => {
+    if (initialData.interval_minutes && [10, 15, 30, 60].includes(initialData.interval_minutes)) {
+      return initialData.interval_minutes;
+    }
     const saved = getItem<number>(StorageKeys.CHECKIN_INTERVAL);
     return saved && [10, 15, 30, 60].includes(saved) ? saved : 10;
   });
@@ -484,10 +495,26 @@ function ActiveSession({
     }
   }, [t]);
 
-  const handleIntervalChange = (mins: number) => {
+  const handleIntervalChange = async (mins: number) => {
     setIntervalMinutes(mins);
     setItem(StorageKeys.CHECKIN_INTERVAL, mins);
     triggerHaptic();
+
+    if (isOnline) {
+      try {
+        await fetch(`/api/status/${uuid}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            passcode,
+            interval_minutes: mins,
+            update_checkin: false, // Does not reset Dead Man's Switch timer
+          }),
+        });
+      } catch (err) {
+        console.warn('Failed to sync interval to cloud:', err);
+      }
+    }
   };
 
   const pingLocation = useCallback(

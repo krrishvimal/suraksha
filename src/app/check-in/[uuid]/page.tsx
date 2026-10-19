@@ -27,6 +27,7 @@ interface StatusPageData {
   id: string;
   status: 'safe' | 'need_help' | 'active';
   message: string | null;
+  interval_minutes?: number;
   location_link: string | null;
   last_checkin_at: string;
   created_at: string;
@@ -250,13 +251,19 @@ function PublicStatusContent() {
   const uuid = typeof params?.uuid === 'string' ? params.uuid : '';
 
   const intervalParam = searchParams.get('interval') || searchParams.get('t');
-  const intervalMinutes = intervalParam ? parseInt(intervalParam, 10) || 10 : 10;
+  const urlInterval = intervalParam ? parseInt(intervalParam, 10) || 10 : 10;
 
   const [pageState, setPageState] = useState<PageState>('loading');
   const [data, setData] = useState<StatusPageData | null>(null);
   const [timeSinceCheckin, setTimeSinceCheckin] = useState('');
   const [expiresIn, setExpiresIn] = useState('');
   const [displayStatus, setDisplayStatus] = useState<DisplayStatus>('unknown');
+
+  // Single source of truth: prioritize cloud interval returned from server, fallback to URL parameter
+  const activeInterval =
+    data?.interval_minutes && [10, 15, 30, 60].includes(data.interval_minutes)
+      ? data.interval_minutes
+      : urlInterval;
 
   // Server-time offset synchronization to eliminate device clock skew
   const serverOffsetRef = useRef<number>(0);
@@ -287,14 +294,18 @@ function PublicStatusContent() {
         }
       }
       setData(result);
-      setDisplayStatus(computeDisplayStatus(result, intervalMinutes, serverOffsetRef.current));
+      const currentInterval =
+        result?.interval_minutes && [10, 15, 30, 60].includes(result.interval_minutes)
+          ? result.interval_minutes
+          : urlInterval;
+      setDisplayStatus(computeDisplayStatus(result, currentInterval, serverOffsetRef.current));
       setPageState('loaded');
     } catch {
       if (pageState === 'loading') {
         setPageState('error');
       }
     }
-  }, [uuid, pageState, intervalMinutes]);
+  }, [uuid, pageState, urlInterval]);
 
   // Initial fetch
   useEffect(() => {
@@ -319,13 +330,13 @@ function PublicStatusContent() {
     const update = () => {
       setTimeSinceCheckin(formatTimeSince(data.last_checkin_at, serverOffsetRef.current));
       setExpiresIn(formatTimeUntil(data.expires_at, serverOffsetRef.current));
-      setDisplayStatus(computeDisplayStatus(data, intervalMinutes, serverOffsetRef.current));
+      setDisplayStatus(computeDisplayStatus(data, activeInterval, serverOffsetRef.current));
     };
 
     update();
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
-  }, [data, intervalMinutes]);
+  }, [data, activeInterval]);
 
   // Audio alert chime when emergency danger status triggers
   const lastAlertStatusRef = useRef<DisplayStatus>('unknown');
@@ -380,8 +391,8 @@ function PublicStatusContent() {
   const statusDescMap: Record<DisplayStatus, string> = {
     safe: t(
       'descSafe',
-      `इस व्यक्ति ने हाल ही में चेक-इन किया है और सुरक्षित है। (सुरक्षा टाइमर: हर ${intervalMinutes} मिनट)`,
-      `This person checked in recently and is safe. (Safety interval: every ${intervalMinutes} mins)`
+      `इस व्यक्ति ने हाल ही में चेक-इन किया है और सुरक्षित है। (सुरक्षा टाइमर: हर ${activeInterval} मिनट)`,
+      `This person checked in recently and is safe. (Safety interval: every ${activeInterval} mins)`
     ),
     need_help: isExplicitNeedHelp
       ? t(
@@ -391,8 +402,8 @@ function PublicStatusContent() {
         )
       : t(
           'descMissedCheckin',
-          `उपयोगकर्ता को हर ${intervalMinutes} मिनट में चेक-इन करना था और समय समाप्त हो चुका है। उनका फोन बंद, छीना हुआ या वे खतरे में हो सकते हैं।`,
-          `User was scheduled to check in every ${intervalMinutes} mins and has missed the deadline. Their phone may be off, snatched, or they may be in danger.`
+          `उपयोगकर्ता को हर ${activeInterval} मिनट में चेक-इन करना था और समय समाप्त हो चुका है। उनका फोन बंद, छीना हुआ या वे खतरे में हो सकते हैं।`,
+          `User was scheduled to check in every ${activeInterval} mins and has missed the deadline. Their phone may be off, snatched, or they may be in danger.`
         ),
     stale: t(
       'descStale',
@@ -430,8 +441,8 @@ function PublicStatusContent() {
                   )
                 : t(
                     'bannerDeadManDesc',
-                    `उपयोगकर्ता ने ${intervalMinutes} मिनट के भीतर सुरक्षित चेक-इन नहीं किया। यदि वे कॉल नहीं उठा रहे हैं, तो नीचे दिए गए अंतिम GPS स्थान पर सहायता भेजें।`,
-                    `User failed to check in within the ${intervalMinutes}-min safety window. If unreachable, send help to their last recorded GPS position below.`
+                    `उपयोगकर्ता ने ${activeInterval} मिनट के भीतर सुरक्षित चेक-इन नहीं किया। यदि वे कॉल नहीं उठा रहे हैं, तो नीचे दिए गए अंतिम GPS स्थान पर सहायता भेजें।`,
+                    `User failed to check in within the ${activeInterval}-min safety window. If unreachable, send help to their last recorded GPS position below.`
                   )}
             </p>
 
@@ -484,8 +495,8 @@ function PublicStatusContent() {
             <Timer className="w-3.5 h-3.5 text-emerald-400" />
             <span>
               {t('timerActive', 'सुरक्षा अंतराल:', 'Safety interval:')}{' '}
-              <strong className="text-white font-mono">{intervalMinutes} min</strong> —{' '}
-              {t('timerMustConfirm', 'हर ' + intervalMinutes + ' मिनट में "मैं सुरक्षित हूँ" दबाना आवश्यक है', 'Must tap "I\'m Safe" every ' + intervalMinutes + ' mins')}
+              <strong className="text-white font-mono">{activeInterval} min</strong> —{' '}
+              {t('timerMustConfirm', 'हर ' + activeInterval + ' मिनट में "मैं सुरक्षित हूँ" दबाना आवश्यक है', 'Must tap "I\'m Safe" every ' + activeInterval + ' mins')}
             </span>
           </div>
         </div>
