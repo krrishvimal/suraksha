@@ -23,20 +23,6 @@ export default function Footer() {
         <p className="text-xs text-muted/70">
           {t('Built with ❤️ for safety', 'सुरक्षा के लिए ❤️ से बनाया गया')}
         </p>
-
-        <div className="pt-2">
-          <button
-            type="button"
-            onClick={() => {
-              try { sessionStorage.removeItem('suraksha_splash_viewed'); } catch {}
-              window.dispatchEvent(new Event('replay_splash'));
-            }}
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-card-border bg-card-bg/60 text-[11px] text-muted hover:text-emerald-400 hover:border-emerald-500/30 transition-colors"
-          >
-            <span>✨</span>
-            <span>{t('Replay Intro Animation', 'इंट्रो एनिमेशन दोबारा देखें')}</span>
-          </button>
-        </div>
       </div>
     </footer>
   );
