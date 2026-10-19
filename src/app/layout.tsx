@@ -8,6 +8,7 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
 import AppSplash from '@/components/AppSplash';
+import InstallPrompt from '@/components/InstallPrompt';
 
 // ---------------------------------------------------------------------------
 // Fonts
@@ -71,6 +72,7 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
             </Suspense>
           </main>
 
+          <InstallPrompt />
           <Footer />
           <ServiceWorkerRegister />
           <AppSplash />
