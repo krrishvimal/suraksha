@@ -1,5 +1,5 @@
 -- ============================================================================
--- Suraksha (सुरक्षा) Database Schema & Performance Optimization Indexes
+-- Suraksha (सुरक्षा) Database Schema, Performance Indexes & RLS Lockdown
 -- ============================================================================
 -- Target Database: Supabase PostgreSQL
 -- Table: status_pages
@@ -23,13 +23,13 @@ CREATE TABLE IF NOT EXISTS public.status_pages (
 -- ============================================================================
 
 -- Index on expires_at:
--- Crucial for daily / hourly Vercel Cron cleanup (DELETE WHERE expires_at < now()).
+-- Crucial for daily Vercel Cron cleanup (DELETE WHERE expires_at < now()).
 -- Transforms sequential table scans into fast B-Tree index range scans.
 CREATE INDEX IF NOT EXISTS idx_status_pages_expires_at 
 ON public.status_pages (expires_at);
 
 -- Index on created_at:
--- Speeds up session creation analytics and chronological filtering.
+-- Speeds up chronological ordering and session creation analytics.
 CREATE INDEX IF NOT EXISTS idx_status_pages_created_at 
 ON public.status_pages (created_at DESC);
 
@@ -38,17 +38,21 @@ CREATE INDEX IF NOT EXISTS idx_status_pages_active_sessions
 ON public.status_pages (id, expires_at);
 
 -- ============================================================================
--- 3. Row Level Security (RLS) Policies
+-- 3. Complete Zero-Trust Row Level Security (RLS) Lockdown
 -- ============================================================================
 
--- Enable RLS
+-- Enable RLS on the table
 ALTER TABLE public.status_pages ENABLE ROW LEVEL SECURITY;
 
--- Allow public read access to non-expired status pages (passcode_hash is filtered out at API layer)
-CREATE POLICY "Public read for non-expired pages"
-ON public.status_pages
-FOR SELECT
-USING (expires_at > timezone('utc'::text, now()));
+-- Drop any permissive public policies that allow direct client-side reads
+DROP POLICY IF EXISTS "Public read for non-expired pages" ON public.status_pages;
+DROP POLICY IF EXISTS "Public select" ON public.status_pages;
+DROP POLICY IF EXISTS "Allow anon read" ON public.status_pages;
+DROP POLICY IF EXISTS "Allow anon insert" ON public.status_pages;
+DROP POLICY IF EXISTS "Allow anon update" ON public.status_pages;
+DROP POLICY IF EXISTS "Allow anon delete" ON public.status_pages;
 
--- Service role bypasses RLS for INSERT, UPDATE, DELETE in Next.js Serverless Route Handlers
--- (Supabase default behavior for service_role key)
+-- NOTE: By enabling RLS and leaving zero policies for the 'anon' or 'authenticated' roles,
+-- direct browser access via PostgREST using the public anon key is 100% BLOCKED.
+-- All database queries MUST pass through Suraksha's authenticated Next.js API Route Handlers
+-- on the server side using the SUPABASE_SERVICE_ROLE_KEY.

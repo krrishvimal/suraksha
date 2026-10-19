@@ -2,10 +2,12 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import bcrypt from 'bcryptjs';
 import { encodeMessagePayload, type StatusPageRow } from '@/lib/supabase';
+import { isValidGoogleMapsUrl, isValidPasscode } from '@/lib/validation';
 
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const MAX_CREATIONS_PER_WINDOW = 5;
 const DEFAULT_EXPIRY_HOURS = 24;
+const PIN_PEPPER = process.env.PIN_PEPPER || 'suraksha-secure-pepper-v1-static-salt';
 
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -85,18 +87,23 @@ export async function POST(request: Request): Promise<NextResponse> {
       interval_minutes?: number;
     };
 
-    if (!passcode || typeof passcode !== 'string') {
+    if (!isValidPasscode(passcode)) {
       return NextResponse.json(
-        { error: 'Passcode is required / पासकोड आवश्यक है' },
-        { status: 400 }
+        { error: 'Passcode must be exactly 4 digits / पासकोड 4 अंकों का होना चाहिए' },
+        { status: 400, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
-    if (!/^\d{4}$/.test(passcode)) {
-      return NextResponse.json(
-        { error: 'Passcode must be exactly 4 digits / पासकोड 4 अंकों का होना चाहिए' },
-        { status: 400 }
-      );
+    // Validate location link if provided (must be legitimate Google Maps coordinates URL)
+    let sanitizedLocationLink: string | null = null;
+    if (location_link) {
+      if (!isValidGoogleMapsUrl(location_link)) {
+        return NextResponse.json(
+          { error: 'Invalid location URL format / अमान्य स्थान लिंक' },
+          { status: 400, headers: { 'Cache-Control': 'no-store, max-age=0' } }
+        );
+      }
+      sanitizedLocationLink = location_link.trim();
     }
 
     // Rate limiting: check recent creations from this specific client origin/IP
@@ -104,15 +111,15 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (isCreationRateLimited(clientId)) {
       return NextResponse.json(
         { error: 'Too many status pages created. Please try again later. / बहुत अधिक पेज बनाए गए। कृपया बाद में पुनः प्रयास करें।' },
-        { status: 429 }
+        { status: 429, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
     const supabase = getSupabaseAdmin();
 
-    // Hash the passcode
+    // Hash the passcode with server-side pepper to prevent rainbow table attacks
     const salt = await bcrypt.genSalt(10);
-    const passcodeHash = await bcrypt.hash(passcode, salt);
+    const passcodeHash = await bcrypt.hash(passcode + PIN_PEPPER, salt);
 
     const now = new Date();
     const expiresAt = new Date(now.getTime() + DEFAULT_EXPIRY_HOURS * 60 * 60 * 1000);
@@ -131,7 +138,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         passcode_hash: passcodeHash,
         status: 'active',
         message: initialMessage,
-        location_link: location_link || null,
+        location_link: sanitizedLocationLink,
         last_checkin_at: nowIso,
         expires_at: expiresAt.toISOString(),
       })

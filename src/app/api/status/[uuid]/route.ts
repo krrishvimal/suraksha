@@ -7,6 +7,13 @@ import {
   type StatusPageRow,
   type CheckinStatus,
 } from '@/lib/supabase';
+import {
+  isValidGoogleMapsUrl,
+  sanitizeUserMessage,
+  isValidPasscode,
+} from '@/lib/validation';
+
+const PIN_PEPPER = process.env.PIN_PEPPER || 'suraksha-secure-pepper-v1-static-salt';
 
 type RouteParams = { params: Promise<{ uuid: string }> };
 
@@ -221,17 +228,17 @@ export async function PATCH(
       interval_minutes?: number;
     };
 
-    if (!passcode || typeof passcode !== 'string') {
+    if (!isValidPasscode(passcode)) {
       return NextResponse.json(
-        { error: 'Passcode is required / पासकोड आवश्यक है' },
-        { status: 400 }
+        { error: 'Passcode must be exactly 4 digits / पासकोड 4 अंकों का होना चाहिए' },
+        { status: 400, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
     if (status && !['safe', 'need_help', 'active'].includes(status)) {
       return NextResponse.json(
         { error: 'Status must be "safe", "need_help", or "active" / स्थिति "safe", "need_help", या "active" होनी चाहिए' },
-        { status: 400 }
+        { status: 400, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
@@ -247,7 +254,7 @@ export async function PATCH(
     if (fetchError || !existing) {
       return NextResponse.json(
         { error: 'Status page not found / स्थिति पेज नहीं मिला' },
-        { status: 404 }
+        { status: 404, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
@@ -261,7 +268,7 @@ export async function PATCH(
     if (isExpired(existingRow.expires_at)) {
       return NextResponse.json(
         { error: 'This status page has expired / यह स्थिति पेज समाप्त हो गया है' },
-        { status: 404 }
+        { status: 404, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
@@ -281,8 +288,11 @@ export async function PATCH(
       );
     }
 
-    // Verify passcode
-    const isValid = await bcrypt.compare(passcode, existingRow.passcode_hash);
+    // Verify passcode with pepper support (backward compatible with unpeppered legacy hashes)
+    const isValid =
+      (await bcrypt.compare(passcode + PIN_PEPPER, existingRow.passcode_hash)) ||
+      (await bcrypt.compare(passcode, existingRow.passcode_hash));
+
     if (!isValid) {
       recordFailedAttempt(uuid, clientId);
       return NextResponse.json(
@@ -314,7 +324,7 @@ export async function PATCH(
     if (message !== undefined || interval_minutes !== undefined) {
       const currentDecoded = decodeMessagePayload(existingRow.message);
       const nextMessage =
-        message !== undefined ? (message ? message.trim() : null) : currentDecoded.message;
+        message !== undefined ? sanitizeUserMessage(message) : currentDecoded.message;
       const nextInterval =
         typeof interval_minutes === 'number' && [10, 15, 30, 60].includes(interval_minutes)
           ? interval_minutes
@@ -324,7 +334,13 @@ export async function PATCH(
     }
 
     if (location_link !== undefined) {
-      updatePayload.location_link = location_link || null;
+      if (location_link && !isValidGoogleMapsUrl(location_link)) {
+        return NextResponse.json(
+          { error: 'Invalid location URL format / अमान्य स्थान लिंक' },
+          { status: 400, headers: { 'Cache-Control': 'no-store, max-age=0' } }
+        );
+      }
+      updatePayload.location_link = location_link ? location_link.trim() : null;
     }
 
     const { data: updated, error: updateError } = await supabase
@@ -401,10 +417,10 @@ export async function DELETE(
 
     const { passcode } = body as { passcode?: string };
 
-    if (!passcode || typeof passcode !== 'string') {
+    if (!isValidPasscode(passcode)) {
       return NextResponse.json(
-        { error: 'Passcode is required / पासकोड आवश्यक है' },
-        { status: 400 }
+        { error: 'Passcode must be exactly 4 digits / पासकोड 4 अंकों का होना चाहिए' },
+        { status: 400, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
@@ -420,7 +436,7 @@ export async function DELETE(
     if (fetchError || !existing) {
       return NextResponse.json(
         { error: 'Status page not found / स्थिति पेज नहीं मिला' },
-        { status: 404 }
+        { status: 404, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
@@ -442,8 +458,11 @@ export async function DELETE(
       );
     }
 
-    // Verify passcode
-    const isValid = await bcrypt.compare(passcode, existingRow.passcode_hash);
+    // Verify passcode with pepper support (backward compatible with unpeppered legacy hashes)
+    const isValid =
+      (await bcrypt.compare(passcode + PIN_PEPPER, existingRow.passcode_hash)) ||
+      (await bcrypt.compare(passcode, existingRow.passcode_hash));
+
     if (!isValid) {
       recordFailedAttempt(uuid, clientId);
       return NextResponse.json(

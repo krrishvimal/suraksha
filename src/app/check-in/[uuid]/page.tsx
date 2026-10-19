@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n';
 import StatusBadge from '@/components/StatusBadge';
+import { isValidGoogleMapsUrl } from '@/lib/validation';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -538,7 +539,7 @@ function PublicStatusContent() {
         )}
 
         {/* LAST RECORDED GPS LOCATION BREADCRUMB */}
-        {data.location_link ? (
+        {data.location_link && isValidGoogleMapsUrl(data.location_link) ? (
           <div className={`rounded-2xl p-5 mb-4 border transition-colors ${
             displayStatus === 'need_help'
               ? 'bg-red-950/30 border-red-500/50 shadow-lg shadow-red-950/30'
