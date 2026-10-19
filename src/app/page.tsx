@@ -26,38 +26,40 @@ interface Feature {
   descHi: string;
   emoji: string;
   glowColor: string;
+  isEmergency?: boolean;
 }
 
 const FEATURES: Feature[] = [
+  {
+    href: '/sos',
+    icon: MessageCircleWarning,
+    emoji: '🚨',
+    titleEn: 'One-Tap SOS Messages',
+    titleHi: 'वन-टैप SOS संदेश',
+    descEn: 'Instant emergency alerts with live GPS to family',
+    descHi: 'परिजनों को लाइव GPS के साथ तुरंत आपातकालीन संदेश',
+    glowColor: 'rgba(239, 68, 68, 0.25)',
+    isEmergency: true,
+  },
+  {
+    href: '/check-in',
+    icon: HeartPulse,
+    emoji: '⏱️',
+    titleEn: "Safety Check-In",
+    titleHi: 'सुरक्षा चेक-इन',
+    descEn: "Dead Man's Switch: Alerts loved ones if overdue",
+    descHi: 'समय पर चेक-इन न करने पर परिजनों को स्वतः सूचना',
+    glowColor: 'rgba(34, 197, 94, 0.15)',
+  },
   {
     href: '/qr-card',
     icon: CreditCard,
     emoji: '🪪',
     titleEn: 'Emergency ID Card',
     titleHi: 'आपातकालीन ID कार्ड',
-    descEn: 'Carry your emergency info as a QR code',
-    descHi: 'अपनी आपातकालीन जानकारी QR कोड के रूप में रखें',
+    descEn: 'Medical info & emergency contacts on your Lock Screen',
+    descHi: 'लॉक स्क्रीन पर मेडिकल जानकारी व आपातकालीन संपर्क',
     glowColor: 'rgba(59, 130, 246, 0.15)',
-  },
-  {
-    href: '/check-in',
-    icon: HeartPulse,
-    emoji: '✅',
-    titleEn: "I'm Safe Check-In",
-    titleHi: 'मैं सुरक्षित हूँ चेक-इन',
-    descEn: "Let loved ones know you're okay",
-    descHi: 'अपनों को बताएं कि आप सुरक्षित हैं',
-    glowColor: 'rgba(34, 197, 94, 0.15)',
-  },
-  {
-    href: '/sos',
-    icon: MessageCircleWarning,
-    emoji: '💬',
-    titleEn: 'SOS Messages',
-    titleHi: 'SOS संदेश',
-    descEn: 'One-tap emergency messages with location',
-    descHi: 'एक टैप में लोकेशन के साथ आपातकालीन संदेश',
-    glowColor: 'rgba(239, 68, 68, 0.15)',
   },
 ];
 
@@ -122,7 +124,11 @@ export default function HomePage() {
             <Link
               key={feature.href}
               href={feature.href}
-              className="group card flex items-center gap-4 transition-all duration-200 hover:scale-[1.02] hover:border-safe/40 active:scale-[0.98]"
+              className={`group card flex items-center gap-4 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] ${
+                feature.isEmergency
+                  ? 'border-red-500/40 bg-gradient-to-r from-red-950/25 via-card-bg to-card-bg shadow-lg shadow-red-950/20 hover:border-red-500/70'
+                  : 'hover:border-safe/40'
+              }`}
               style={{
                 boxShadow: 'none',
                 transition: 'box-shadow 200ms ease, border-color 200ms ease, transform 200ms ease',
@@ -136,20 +142,35 @@ export default function HomePage() {
               }}
             >
               {/* Icon area */}
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-card-border/50">
+              <div
+                className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-xl ${
+                  feature.isEmergency
+                    ? 'bg-red-500/15 border border-red-500/30'
+                    : 'bg-card-border/50'
+                }`}
+              >
                 <Icon
                   size={28}
-                  className="text-safe transition-transform duration-200 group-hover:scale-110"
+                  className={`transition-transform duration-200 group-hover:scale-110 ${
+                    feature.isEmergency ? 'text-red-400' : 'text-safe'
+                  }`}
                   aria-hidden="true"
                 />
               </div>
 
               {/* Text */}
               <div className="flex-1 min-w-0">
-                <h2 className="text-base font-semibold text-foreground">
-                  <span aria-hidden="true">{feature.emoji} </span>
-                  {t(feature.titleEn, feature.titleHi)}
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-semibold text-foreground">
+                    <span aria-hidden="true">{feature.emoji} </span>
+                    {t(feature.titleEn, feature.titleHi)}
+                  </h2>
+                  {feature.isEmergency && (
+                    <span className="rounded-full bg-red-500/20 border border-red-500/40 px-2 py-0.5 text-[10px] font-bold text-red-400 uppercase tracking-wider animate-pulse">
+                      Urgent
+                    </span>
+                  )}
+                </div>
                 <p className="mt-0.5 text-sm text-muted leading-snug">
                   {t(feature.descEn, feature.descHi)}
                 </p>
@@ -158,7 +179,11 @@ export default function HomePage() {
               {/* Arrow */}
               <ArrowRight
                 size={20}
-                className="shrink-0 text-muted transition-transform duration-200 group-hover:translate-x-1 group-hover:text-safe"
+                className={`shrink-0 transition-transform duration-200 group-hover:translate-x-1 ${
+                  feature.isEmergency
+                    ? 'text-red-400 group-hover:text-red-300'
+                    : 'text-muted group-hover:text-safe'
+                }`}
                 aria-hidden="true"
               />
             </Link>

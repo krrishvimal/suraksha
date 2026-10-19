@@ -16,6 +16,10 @@ import {
   CheckCircle,
   Send,
   X,
+  Share2,
+  PhoneCall,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n';
 import { getItem, setItem, StorageKeys } from '@/lib/storage';
@@ -272,25 +276,12 @@ export default function SOSPage() {
     [cardData]
   );
 
-  const sendViaWhatsApp = useCallback(() => {
-    if (!modal.message) return;
-    triggerHaptic();
-    const encoded = encodeURIComponent(modal.message);
-    validContacts.forEach((contact) => {
-      const phone = getFormattedPhone(contact).replace('+', '');
-      window.open(`https://wa.me/${phone}?text=${encoded}`, '_blank');
-    });
-    setModal((prev) => ({ ...prev, isOpen: false }));
-  }, [modal.message, validContacts]);
+  const [hasCopied, setHasCopied] = useState(false);
+  const [canShare, setCanShare] = useState(false);
 
-  const sendViaSMS = useCallback(() => {
-    if (!modal.message) return;
-    triggerHaptic();
-    const phones = validContacts.map((c) => getFormattedPhone(c)).join(',');
-    const encoded = encodeURIComponent(modal.message);
-    window.open(`sms:${phones}?body=${encoded}`, '_self');
-    setModal((prev) => ({ ...prev, isOpen: false }));
-  }, [modal.message, validContacts]);
+  useEffect(() => {
+    setCanShare(typeof navigator !== 'undefined' && !!navigator.share);
+  }, []);
 
   const closeModal = useCallback(() => {
     setModal({
@@ -300,7 +291,70 @@ export default function SOSPage() {
       locationFailed: false,
       isGettingLocation: false,
     });
+    setHasCopied(false);
   }, []);
+
+  const handleShareAll = useCallback(async () => {
+    if (!modal.message) return;
+    triggerHaptic();
+
+    // Use Web Share API if available (bypasses browser popup blocker entirely)
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: '🚨 SURAKSHA SOS EMERGENCY / आपातकालीन',
+          text: modal.message,
+        });
+        closeModal();
+        return;
+      } catch {
+        // User dismissed share dialog or unsupported, fall through to direct WhatsApp
+      }
+    }
+
+    // Direct WhatsApp fallback for contact #1
+    if (validContacts.length > 0) {
+      const phone = getFormattedPhone(validContacts[0]).replace('+', '');
+      const encoded = encodeURIComponent(modal.message);
+      window.open(`https://wa.me/${phone}?text=${encoded}`, '_blank');
+    }
+  }, [modal.message, validContacts, closeModal]);
+
+  const sendSingleWhatsApp = useCallback((contact: Contact) => {
+    if (!modal.message) return;
+    triggerHaptic();
+    const phone = getFormattedPhone(contact).replace('+', '');
+    const encoded = encodeURIComponent(modal.message);
+    window.open(`https://wa.me/${phone}?text=${encoded}`, '_blank');
+  }, [modal.message]);
+
+  const callContact = useCallback((contact: Contact) => {
+    triggerHaptic();
+    window.location.href = `tel:${getFormattedPhone(contact)}`;
+  }, []);
+
+  const copyMessageText = useCallback(async () => {
+    if (!modal.message) return;
+    triggerHaptic();
+    try {
+      await navigator.clipboard.writeText(modal.message);
+      setHasCopied(true);
+      setTimeout(() => setHasCopied(false), 2000);
+    } catch {
+      // Fallback
+    }
+  }, [modal.message]);
+
+  const sendViaSMS = useCallback(() => {
+    if (!modal.message) return;
+    triggerHaptic();
+    const phones = validContacts.map((c) => getFormattedPhone(c)).join(',');
+    const encoded = encodeURIComponent(modal.message);
+    const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const delimiter = isIOS ? '&' : '?';
+    window.location.href = `sms:${phones}${delimiter}body=${encoded}`;
+    closeModal();
+  }, [modal.message, validContacts, closeModal]);
 
   // Close modal on Escape
   useEffect(() => {
@@ -550,28 +604,100 @@ export default function SOSPage() {
                   </span>
                 </p>
 
-                {/* Send buttons */}
-                <div className="space-y-2.5">
+                {/* Primary Multi-Action Buttons */}
+                <div className="space-y-2">
                   <button
                     type="button"
-                    onClick={sendViaWhatsApp}
-                    className="flex min-h-[52px] w-full items-center justify-center gap-2.5 rounded-xl bg-[#25D366] px-5 py-3.5 text-base font-semibold text-white shadow-lg transition-all hover:bg-[#22c55e] active:scale-[0.98]"
-                    aria-label={t('send_whatsapp', 'Send via WhatsApp / WhatsApp से भेजें')}
+                    onClick={handleShareAll}
+                    className="flex min-h-[52px] w-full items-center justify-center gap-2.5 rounded-xl bg-[#25D366] px-5 py-3.5 text-base font-bold text-white shadow-lg shadow-[#25D366]/20 transition-all hover:bg-[#20bd5a] active:scale-[0.98]"
+                    aria-label={t('send_whatsapp_share', 'Send via WhatsApp & Apps / WhatsApp व अन्य ऐप्स से भेजें')}
                   >
-                    <MessageCircle className="h-5 w-5" aria-hidden="true" />
-                    {t('send_via_whatsapp', 'Send via WhatsApp / WhatsApp से भेजें')}
+                    {canShare ? (
+                      <Share2 className="h-5 w-5" aria-hidden="true" />
+                    ) : (
+                      <MessageCircle className="h-5 w-5" aria-hidden="true" />
+                    )}
+                    {canShare
+                      ? t('send_whatsapp_share', 'Share via WhatsApp & Apps / WhatsApp व ऐप्स से भेजें')
+                      : t('send_via_whatsapp', 'Send via WhatsApp / WhatsApp से भेजें')}
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={sendViaSMS}
-                    className="flex min-h-[52px] w-full items-center justify-center gap-2.5 rounded-xl border border-white/20 bg-white/5 px-5 py-3.5 text-base font-semibold text-white transition-all hover:bg-white/10 active:scale-[0.98]"
-                    aria-label={t('send_sms', 'Send via SMS / SMS से भेजें')}
-                  >
-                    <Smartphone className="h-5 w-5" aria-hidden="true" />
-                    {t('send_via_sms', 'Send via SMS / SMS से भेजें')}
-                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={sendViaSMS}
+                      className="flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-3 py-2.5 text-xs font-semibold text-white transition-all hover:bg-white/10 active:scale-[0.98]"
+                      aria-label={t('send_sms', 'Send via SMS / SMS से भेजें')}
+                    >
+                      <Smartphone className="h-4 w-4 text-blue-400" aria-hidden="true" />
+                      {t('send_via_sms', 'Send via SMS / SMS')}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={copyMessageText}
+                      className="flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-3 py-2.5 text-xs font-semibold text-white transition-all hover:bg-white/10 active:scale-[0.98]"
+                    >
+                      {hasCopied ? (
+                        <>
+                          <Check className="h-4 w-4 text-emerald-400" />
+                          <span className="text-emerald-400">{t('copied', 'Copied! / कॉपी हुआ')}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-4 w-4 text-neutral-400" />
+                          <span>{t('copy_text', 'Copy Text / कॉपी करें')}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
+
+                {/* Per-Contact Instant Triggers (Bypasses all popup blockers) */}
+                {validContacts.length > 0 && (
+                  <div className="mt-4 pt-3 border-t border-white/10">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-white/50 mb-2">
+                      {t('direct_contact_triggers', 'Direct Emergency Actions / सीधे संपर्क करें')}:
+                    </p>
+                    <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
+                      {validContacts.map((contact) => (
+                        <div
+                          key={contact.id}
+                          className="flex items-center justify-between rounded-xl bg-white/[0.04] border border-white/10 p-2 px-3"
+                        >
+                          <div className="min-w-0 flex-1 pr-2">
+                            <p className="text-xs font-bold text-white truncate">
+                              {contact.name || contact.phone}
+                            </p>
+                            <p className="text-[10px] text-white/40 font-mono">
+                              {getFormattedPhone(contact)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => sendSingleWhatsApp(contact)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#25D366]/20 border border-[#25D366]/40 text-[#25D366] text-[11px] font-bold hover:bg-[#25D366]/30 active:scale-95"
+                              title="Send WhatsApp"
+                            >
+                              <MessageCircle className="h-3.5 w-3.5" />
+                              <span>WA</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => callContact(contact)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-500/20 border border-blue-500/40 text-blue-400 text-[11px] font-bold hover:bg-blue-500/30 active:scale-95"
+                              title="Direct Phone Call"
+                            >
+                              <PhoneCall className="h-3.5 w-3.5" />
+                              <span>{t('call', 'Call / कॉल')}</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>

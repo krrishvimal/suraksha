@@ -39,6 +39,39 @@ type PageState = 'loading' | 'loaded' | 'not_found' | 'error';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+function playEmergencyChime() {
+  try {
+    if (typeof window === 'undefined') return;
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+
+    const now = ctx.currentTime;
+    const playTone = (freq: number, start: number, duration: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.3, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + duration);
+    };
+
+    // Attention-grabbing 2-tone alert chime repeated: 880Hz (A5) -> 587Hz (D5)
+    playTone(880, now, 0.22);
+    playTone(587, now + 0.25, 0.32);
+    playTone(880, now + 0.65, 0.22);
+    playTone(587, now + 0.9, 0.4);
+  } catch {
+    // Audio autoplay restricted or unsupported
+  }
+}
+
 function formatTimeSince(isoDate: string, serverOffsetMs = 0): string {
   const adjustedNow = Date.now() - serverOffsetMs;
   const diff = adjustedNow - new Date(isoDate).getTime();
@@ -293,6 +326,19 @@ function PublicStatusContent() {
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
   }, [data, intervalMinutes]);
+
+  // Audio alert chime when emergency danger status triggers
+  const lastAlertStatusRef = useRef<DisplayStatus>('unknown');
+  useEffect(() => {
+    if (
+      displayStatus === 'need_help' &&
+      lastAlertStatusRef.current !== 'need_help' &&
+      lastAlertStatusRef.current !== 'unknown'
+    ) {
+      playEmergencyChime();
+    }
+    lastAlertStatusRef.current = displayStatus;
+  }, [displayStatus]);
 
   // ─── Render states ─────────────────────────────────────────────────────────
 
@@ -564,11 +610,33 @@ function PublicStatusContent() {
           </div>
         </div>
 
-        {/* Suraksha branding */}
-        <div className="text-center mt-10 pb-8">
-          <div className="flex items-center justify-center gap-2 text-neutral-700">
+        {/* Viral Adoption & Family Safety Card */}
+        <div className="mt-8 mb-4 rounded-2xl border border-emerald-500/25 bg-gradient-to-b from-emerald-950/30 to-neutral-900/50 p-4 text-center">
+          <div className="flex items-center justify-center gap-2 mb-1.5 text-emerald-400 font-bold text-xs uppercase tracking-wider">
             <Shield className="w-4 h-4" />
-            <span className="text-xs font-medium tracking-wider uppercase">
+            <span>{t('protectFamilyTitle', 'Protect Your Family / अपनों की सुरक्षा करें')}</span>
+          </div>
+          <p className="text-xs text-neutral-400 leading-relaxed mb-3">
+            {t(
+              'protectFamilyDesc',
+              'सुरक्षा एक 100% मुफ़्त और निजी व्यक्तिगत सुरक्षा टूल है। कोई साइनअप नहीं, शून्य डेटा संग्रह।',
+              'Suraksha is a 100% free, private personal safety tool. No signup required, zero data collection.'
+            )}
+          </p>
+          <a
+            href="/check-in"
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-500 text-black font-bold text-xs transition-colors hover:bg-emerald-400 active:scale-95 shadow-md shadow-emerald-500/20"
+          >
+            <span>{t('createYourOwnCheckin', 'अपना सुरक्षा चेक-इन बनाएं', 'Create Your Safety Check-In')}</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        </div>
+
+        {/* Suraksha branding */}
+        <div className="text-center pb-8 pt-2">
+          <div className="flex items-center justify-center gap-2 text-neutral-600">
+            <Shield className="w-3.5 h-3.5" />
+            <span className="text-[11px] font-medium tracking-wider uppercase">
               {t('poweredBy', 'सुरक्षा द्वारा संचालित', 'Powered by Suraksha')}
             </span>
           </div>

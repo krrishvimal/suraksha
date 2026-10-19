@@ -83,6 +83,7 @@ export default function QRCardPage() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isGeneratingWallpaper, setIsGeneratingWallpaper] = useState(false);
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load saved data on mount
@@ -539,6 +540,86 @@ export default function QRCardPage() {
     }
   }, [qrDataUrl, formData.name, t]);
 
+  const handleDownloadWallpaper = useCallback(async () => {
+    if (!qrDataUrl) return;
+    setIsGeneratingWallpaper(true);
+    try {
+      // Create high-res 9:16 vertical wallpaper canvas: 1080 x 1920
+      const wpCanvas = document.createElement('canvas');
+      wpCanvas.width = 1080;
+      wpCanvas.height = 1920;
+      const ctx = wpCanvas.getContext('2d');
+      if (!ctx) return;
+
+      // 1. Dark Tactical Background Gradient
+      const bgGrad = ctx.createLinearGradient(0, 0, 0, 1920);
+      bgGrad.addColorStop(0, '#020617');
+      bgGrad.addColorStop(0.3, '#0A0A0A');
+      bgGrad.addColorStop(0.7, '#0F172A');
+      bgGrad.addColorStop(1, '#020617');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, 1080, 1920);
+
+      // Subtle tactical boundary frame
+      ctx.strokeStyle = '#1E293B';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(32, 32, 1016, 1856);
+
+      // Top indicator (Leaving space for phone lockscreen clock & notifications: 0 to 520px)
+      ctx.fillStyle = '#38BDF8';
+      ctx.font = 'bold 26px system-ui, -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('🛡️ SURAKSHA • EMERGENCY MEDICAL ID', 540, 560);
+
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = '500 20px system-ui, -apple-system, sans-serif';
+      ctx.fillText('NO UNLOCK REQUIRED • FIRST RESPONDERS SCAN OR CALL BELOW', 540, 600);
+
+      // Load current badge image onto wallpaper canvas
+      const badgeImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = qrDataUrl;
+      });
+
+      // Scale badge crisply onto wallpaper canvas
+      const targetW = 780;
+      const targetH = Math.round(targetW * (badgeImg.height / badgeImg.width));
+      const targetX = Math.round((1080 - targetW) / 2);
+      const targetY = 640;
+
+      // Draw shadow under badge
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+      ctx.shadowBlur = 40;
+      ctx.shadowOffsetY = 20;
+
+      ctx.drawImage(badgeImg, targetX, targetY, targetW, targetH);
+
+      // Reset shadow
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+
+      // Bottom guidance footer
+      ctx.fillStyle = '#EF4444';
+      ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+      ctx.fillText('🚨 POLICE / AMBULANCE / FIRE: DIAL 112 IMMEDIATELY', 540, 1830);
+
+      // Export
+      const wallpaperUrl = wpCanvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = `suraksha-lockscreen-wallpaper-${formData.name.trim().replace(/\s+/g, '-').toLowerCase() || 'id'}.png`;
+      link.href = wallpaperUrl;
+      link.click();
+    } catch (err) {
+      console.error('Wallpaper generation failed:', err);
+      setError(t('wallpaper_failed', 'Failed to generate wallpaper. / वॉलपेपर बनाने में विफल।'));
+    } finally {
+      setIsGeneratingWallpaper(false);
+    }
+  }, [qrDataUrl, formData.name, t]);
+
   if (!isLoaded) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0A0A0A]">
@@ -894,7 +975,7 @@ export default function QRCardPage() {
               </div>
 
               {/* Action Buttons */}
-              <div className="mt-4 flex w-full flex-col gap-2">
+              <div className="mt-4 flex w-full flex-col gap-2.5">
                 <button
                   type="button"
                   onClick={handleDownload}
@@ -903,6 +984,26 @@ export default function QRCardPage() {
                 >
                   <Download className="h-4 w-4" aria-hidden="true" />
                   {t('download_badge_png', 'Download ID Badge (PNG) / ID बैज डाउनलोड करें')}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadWallpaper}
+                  disabled={isGeneratingWallpaper}
+                  className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-emerald-600/25 border border-emerald-500/40 px-4 py-3 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-600/40 active:scale-[0.98] disabled:opacity-50"
+                  aria-label={t('download_wallpaper', 'Download Lock Screen Wallpaper (9:16) / लॉक स्क्रीन वॉलपेपर डाउनलोड करें')}
+                >
+                  {isGeneratingWallpaper ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                      <span>{t('generating_wallpaper', 'Creating Wallpaper... / वॉलपेपर बन रहा है...')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Smartphone className="h-4 w-4 text-emerald-400" aria-hidden="true" />
+                      <span>{t('download_wallpaper', '📱 Download Lock Screen Wallpaper (9:16) / वॉलपेपर डाउनलोड')}</span>
+                    </>
+                  )}
                 </button>
               </div>
 
