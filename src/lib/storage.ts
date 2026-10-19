@@ -96,3 +96,22 @@ export function removeItem(key: string): void {
     );
   }
 }
+
+/**
+ * Emergency Panic Wipe: Permanently wipes all locally cached emergency contacts,
+ * medical QR card records, and active safety check-in tokens from the device.
+ */
+export function purgeAllLocalData(): void {
+  if (!isLocalStorageAvailable()) return;
+  try {
+    Object.values(StorageKeys).forEach((key) => {
+      window.localStorage.removeItem(key);
+    });
+  } catch (error: unknown) {
+    console.error(
+      '[storage] Emergency wipe failure:',
+      error instanceof Error ? error.message : error
+    );
+  }
+}
+

@@ -38,21 +38,27 @@ CREATE INDEX IF NOT EXISTS idx_status_pages_active_sessions
 ON public.status_pages (id, expires_at);
 
 -- ============================================================================
--- 3. Complete Zero-Trust Row Level Security (RLS) Lockdown
+-- 3. Complete Zero-Trust Row Level Security (RLS) & Role Lockdown
 -- ============================================================================
 
--- Enable RLS on the table
+-- 1. Dynamically drop EVERY existing policy on status_pages regardless of name
+DO $$ 
+DECLARE 
+    pol record;
+BEGIN 
+    FOR pol IN (SELECT policyname FROM pg_policies WHERE tablename = 'status_pages') 
+    LOOP 
+        EXECUTE format('DROP POLICY IF EXISTS %I ON public.status_pages', pol.policyname); 
+    END LOOP; 
+END $$;
+
+-- 2. Revoke all direct table privileges from public client roles (anon and authenticated)
+REVOKE ALL ON TABLE public.status_pages FROM anon, authenticated;
+
+-- 3. Enable and Force Row Level Security
 ALTER TABLE public.status_pages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.status_pages FORCE ROW LEVEL SECURITY;
 
--- Drop any permissive public policies that allow direct client-side reads
-DROP POLICY IF EXISTS "Public read for non-expired pages" ON public.status_pages;
-DROP POLICY IF EXISTS "Public select" ON public.status_pages;
-DROP POLICY IF EXISTS "Allow anon read" ON public.status_pages;
-DROP POLICY IF EXISTS "Allow anon insert" ON public.status_pages;
-DROP POLICY IF EXISTS "Allow anon update" ON public.status_pages;
-DROP POLICY IF EXISTS "Allow anon delete" ON public.status_pages;
-
--- NOTE: By enabling RLS and leaving zero policies for the 'anon' or 'authenticated' roles,
--- direct browser access via PostgREST using the public anon key is 100% BLOCKED.
+-- Result: Direct browser PostgREST queries via NEXT_PUBLIC_SUPABASE_ANON_KEY are 100% blocked (Permission Denied).
 -- All database queries MUST pass through Suraksha's authenticated Next.js API Route Handlers
 -- on the server side using the SUPABASE_SERVICE_ROLE_KEY.
