@@ -18,6 +18,49 @@ function getSupabaseAdmin() {
   return createClient(url, key);
 }
 
+// ─── Ephemeral In-Memory Client Rate Limiting Store ─────────────────────────
+// Tracks creation counts per client origin/IP in a 1-hour sliding window.
+// This preserves zero-PII privacy (IPs are never written to PostgreSQL) while
+// fixing the bug where 5 global creations blocked all subsequent users worldwide.
+interface IpCreationRecord {
+  timestamps: number[];
+}
+
+const creationRateLimitMap = new Map<string, IpCreationRecord>();
+
+function isCreationRateLimited(clientId: string): boolean {
+  if (clientId === 'unknown') return false;
+
+  const now = Date.now();
+  const record = creationRateLimitMap.get(clientId) || { timestamps: [] };
+
+  // Filter timestamps within the rolling window
+  const activeTimestamps = record.timestamps.filter(
+    (timestamp) => now - timestamp < RATE_LIMIT_WINDOW_MS
+  );
+
+  if (activeTimestamps.length >= MAX_CREATIONS_PER_WINDOW) {
+    return true;
+  }
+
+  activeTimestamps.push(now);
+  creationRateLimitMap.set(clientId, { timestamps: activeTimestamps });
+
+  // Self-cleaning: prevent memory leaks if map grows large (> 1,000 entries)
+  if (creationRateLimitMap.size > 1000) {
+    for (const [key, val] of creationRateLimitMap.entries()) {
+      const valid = val.timestamps.filter((ts) => now - ts < RATE_LIMIT_WINDOW_MS);
+      if (valid.length === 0) {
+        creationRateLimitMap.delete(key);
+      } else {
+        creationRateLimitMap.set(key, { timestamps: valid });
+      }
+    }
+  }
+
+  return false;
+}
+
 function getClientIdentifier(request: Request): string {
   const forwarded = request.headers.get('x-forwarded-for');
   const realIp = request.headers.get('x-real-ip');
@@ -56,25 +99,16 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    const supabase = getSupabaseAdmin();
-
-    // Rate limiting: check recent creations from same origin
+    // Rate limiting: check recent creations from this specific client origin/IP
     const clientId = getClientIdentifier(request);
-    if (clientId !== 'unknown') {
-      const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
-
-      const { count, error: countError } = await supabase
-        .from('status_pages')
-        .select('*', { count: 'exact', head: true })
-        .gte('created_at', windowStart);
-
-      if (!countError && count !== null && count >= MAX_CREATIONS_PER_WINDOW) {
-        return NextResponse.json(
-          { error: 'Too many status pages created. Please try again later. / बहुत अधिक पेज बनाए गए। कृपया बाद में पुनः प्रयास करें।' },
-          { status: 429 }
-        );
-      }
+    if (isCreationRateLimited(clientId)) {
+      return NextResponse.json(
+        { error: 'Too many status pages created. Please try again later. / बहुत अधिक पेज बनाए गए। कृपया बाद में पुनः प्रयास करें।' },
+        { status: 429 }
+      );
     }
+
+    const supabase = getSupabaseAdmin();
 
     // Hash the passcode
     const salt = await bcrypt.genSalt(10);
@@ -126,7 +160,12 @@ export async function POST(request: Request): Promise<NextResponse> {
         interval_minutes: initialInterval,
         server_time: new Date().toISOString(),
       },
-      { status: 201 }
+      {
+        status: 201,
+        headers: {
+          'Cache-Control': 'no-store, max-age=0',
+        },
+      }
     );
   } catch (err) {
     console.error('Status creation error:', err);

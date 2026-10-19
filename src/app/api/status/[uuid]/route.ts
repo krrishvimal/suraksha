@@ -37,8 +37,15 @@ const failedAttemptsMap = new Map<string, FailedAttemptRecord>();
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes lockout
 
-function checkBruteForceLock(uuid: string): { isLocked: boolean; remainingMinutes: number } {
-  const record = failedAttemptsMap.get(uuid);
+function getClientIdentifier(request: Request): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  const realIp = request.headers.get('x-real-ip');
+  const cfIp = request.headers.get('cf-connecting-ip');
+  return cfIp || (forwarded ? forwarded.split(',')[0].trim() : '') || realIp || 'unknown';
+}
+
+function checkKeyLock(key: string): { isLocked: boolean; remainingMinutes: number } {
+  const record = failedAttemptsMap.get(key);
   if (!record) return { isLocked: false, remainingMinutes: 0 };
 
   const now = Date.now();
@@ -48,26 +55,58 @@ function checkBruteForceLock(uuid: string): { isLocked: boolean; remainingMinute
   }
 
   if (record.lockedUntil > 0 && record.lockedUntil <= now) {
-    failedAttemptsMap.delete(uuid);
+    failedAttemptsMap.delete(key);
   }
 
   return { isLocked: false, remainingMinutes: 0 };
 }
 
-function recordFailedAttempt(uuid: string): void {
+function checkBruteForceLock(uuid: string, clientId?: string): { isLocked: boolean; remainingMinutes: number } {
+  const uuidLock = checkKeyLock(uuid);
+  if (uuidLock.isLocked) return uuidLock;
+
+  if (clientId && clientId !== 'unknown') {
+    const ipLock = checkKeyLock(`ip:${clientId}`);
+    if (ipLock.isLocked) return ipLock;
+  }
+
+  return { isLocked: false, remainingMinutes: 0 };
+}
+
+function recordSingleKeyAttempt(key: string): void {
   const now = Date.now();
-  const record = failedAttemptsMap.get(uuid) || { count: 0, lockedUntil: 0 };
+  const record = failedAttemptsMap.get(key) || { count: 0, lockedUntil: 0 };
   record.count += 1;
 
   if (record.count >= MAX_FAILED_ATTEMPTS) {
     record.lockedUntil = now + LOCKOUT_DURATION_MS;
   }
 
-  failedAttemptsMap.set(uuid, record);
+  failedAttemptsMap.set(key, record);
 }
 
-function clearFailedAttempts(uuid: string): void {
+function recordFailedAttempt(uuid: string, clientId?: string): void {
+  recordSingleKeyAttempt(uuid);
+  if (clientId && clientId !== 'unknown') {
+    recordSingleKeyAttempt(`ip:${clientId}`);
+  }
+
+  // Periodic pruning if store exceeds 1,000 entries
+  if (failedAttemptsMap.size > 1000) {
+    const now = Date.now();
+    for (const [key, val] of failedAttemptsMap.entries()) {
+      if (val.lockedUntil > 0 && val.lockedUntil <= now) {
+        failedAttemptsMap.delete(key);
+      }
+    }
+  }
+}
+
+function clearFailedAttempts(uuid: string, clientId?: string): void {
   failedAttemptsMap.delete(uuid);
+  if (clientId && clientId !== 'unknown') {
+    failedAttemptsMap.delete(`ip:${clientId}`);
+  }
 }
 
 // ─── GET: Fetch status page by UUID ───────────────────────────────────────────
@@ -97,7 +136,10 @@ export async function GET(
     if (error || !data) {
       return NextResponse.json(
         { error: 'Status page not found / स्थिति पेज नहीं मिला' },
-        { status: 404 }
+        {
+          status: 404,
+          headers: { 'Cache-Control': 'no-store, max-age=0' },
+        }
       );
     }
 
@@ -106,28 +148,41 @@ export async function GET(
     if (isExpired(row.expires_at)) {
       return NextResponse.json(
         { error: 'This status page has expired / यह स्थिति पेज समाप्त हो गया है' },
-        { status: 404 }
+        {
+          status: 404,
+          headers: { 'Cache-Control': 'no-store, max-age=0' },
+        }
       );
     }
 
     const { message: decodedMessage, interval_minutes } = decodeMessagePayload(row.message);
 
-    return NextResponse.json({
-      id: row.id,
-      status: row.status,
-      message: decodedMessage,
-      interval_minutes,
-      location_link: row.location_link,
-      last_checkin_at: row.last_checkin_at,
-      created_at: row.created_at,
-      expires_at: row.expires_at,
-      server_time: new Date().toISOString(),
-    });
+    return NextResponse.json(
+      {
+        id: row.id,
+        status: row.status,
+        message: decodedMessage,
+        interval_minutes,
+        location_link: row.location_link,
+        last_checkin_at: row.last_checkin_at,
+        created_at: row.created_at,
+        expires_at: row.expires_at,
+        server_time: new Date().toISOString(),
+      },
+      {
+        headers: {
+          'Cache-Control': 'public, s-maxage=2, stale-while-revalidate=4',
+        },
+      }
+    );
   } catch (err) {
     console.error('GET status error:', err);
     return NextResponse.json(
       { error: 'Internal server error / आंतरिक सर्वर त्रुटि' },
-      { status: 500 }
+      {
+        status: 500,
+        headers: { 'Cache-Control': 'no-store, max-age=0' },
+      }
     );
   }
 }
@@ -210,29 +265,37 @@ export async function PATCH(
       );
     }
 
-    // Brute-force protection: check if UUID is temporarily locked out
-    const lock = checkBruteForceLock(uuid);
+    const clientId = getClientIdentifier(request);
+
+    // Brute-force protection: check if UUID or client IP is temporarily locked out
+    const lock = checkBruteForceLock(uuid, clientId);
     if (lock.isLocked) {
       return NextResponse.json(
         {
           error: `Too many incorrect passcode attempts. Locked for ${lock.remainingMinutes} minutes. / अत्यधिक गलत प्रयास। ${lock.remainingMinutes} मिनट के लिए लॉक किया गया।`,
         },
-        { status: 429 }
+        {
+          status: 429,
+          headers: { 'Cache-Control': 'no-store, max-age=0' },
+        }
       );
     }
 
     // Verify passcode
     const isValid = await bcrypt.compare(passcode, existingRow.passcode_hash);
     if (!isValid) {
-      recordFailedAttempt(uuid);
+      recordFailedAttempt(uuid, clientId);
       return NextResponse.json(
         { error: 'Incorrect passcode / गलत पासकोड' },
-        { status: 401 }
+        {
+          status: 401,
+          headers: { 'Cache-Control': 'no-store, max-age=0' },
+        }
       );
     }
 
     // Success — clear any failed attempts
-    clearFailedAttempts(uuid);
+    clearFailedAttempts(uuid, clientId);
 
     // Build update payload
     const updatePayload: Record<string, string | null> = {};
@@ -284,17 +347,24 @@ export async function PATCH(
       updatedRow.message
     );
 
-    return NextResponse.json({
-      id: updatedRow.id,
-      status: updatedRow.status,
-      message: decodedMessage,
-      interval_minutes: returnedInterval,
-      location_link: updatedRow.location_link,
-      last_checkin_at: updatedRow.last_checkin_at,
-      created_at: updatedRow.created_at,
-      expires_at: updatedRow.expires_at,
-      server_time: new Date().toISOString(),
-    });
+    return NextResponse.json(
+      {
+        id: updatedRow.id,
+        status: updatedRow.status,
+        message: decodedMessage,
+        interval_minutes: returnedInterval,
+        location_link: updatedRow.location_link,
+        last_checkin_at: updatedRow.last_checkin_at,
+        created_at: updatedRow.created_at,
+        expires_at: updatedRow.expires_at,
+        server_time: new Date().toISOString(),
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0',
+        },
+      }
+    );
   } catch (err) {
     console.error('PATCH status error:', err);
     return NextResponse.json(
@@ -356,29 +426,37 @@ export async function DELETE(
 
     const existingRow = existing as { id: string; passcode_hash: string };
 
-    // Brute-force protection: check if UUID is temporarily locked out
-    const lock = checkBruteForceLock(uuid);
+    const clientId = getClientIdentifier(request);
+
+    // Brute-force protection: check if UUID or client IP is temporarily locked out
+    const lock = checkBruteForceLock(uuid, clientId);
     if (lock.isLocked) {
       return NextResponse.json(
         {
           error: `Too many incorrect passcode attempts. Locked for ${lock.remainingMinutes} minutes. / अत्यधिक गलत प्रयास। ${lock.remainingMinutes} मिनट के लिए लॉक किया गया।`,
         },
-        { status: 429 }
+        {
+          status: 429,
+          headers: { 'Cache-Control': 'no-store, max-age=0' },
+        }
       );
     }
 
     // Verify passcode
     const isValid = await bcrypt.compare(passcode, existingRow.passcode_hash);
     if (!isValid) {
-      recordFailedAttempt(uuid);
+      recordFailedAttempt(uuid, clientId);
       return NextResponse.json(
         { error: 'Incorrect passcode / गलत पासकोड' },
-        { status: 401 }
+        {
+          status: 401,
+          headers: { 'Cache-Control': 'no-store, max-age=0' },
+        }
       );
     }
 
     // Success — clear any failed attempts
-    clearFailedAttempts(uuid);
+    clearFailedAttempts(uuid, clientId);
 
     const { error: deleteError } = await supabase
       .from('status_pages')
@@ -389,13 +467,19 @@ export async function DELETE(
       console.error('Supabase delete error:', deleteError);
       return NextResponse.json(
         { error: 'Failed to delete status page / स्थिति पेज हटाने में विफल' },
-        { status: 500 }
+        {
+          status: 500,
+          headers: { 'Cache-Control': 'no-store, max-age=0' },
+        }
       );
     }
 
     return NextResponse.json(
       { message: 'Status page deleted successfully / स्थिति पेज सफलतापूर्वक हटाया गया' },
-      { status: 200 }
+      {
+        status: 200,
+        headers: { 'Cache-Control': 'no-store, max-age=0' },
+      }
     );
   } catch (err) {
     console.error('DELETE status error:', err);

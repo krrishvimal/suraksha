@@ -13,7 +13,7 @@ import { createClient } from '@supabase/supabase-js';
 
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
   if (!url || !key) {
     throw new Error('Missing Supabase environment variables');
@@ -56,11 +56,18 @@ export async function GET(request: Request): Promise<NextResponse> {
     const deletedCount = data?.length ?? 0;
     console.log(`[Cleanup] Deleted ${deletedCount} expired status page(s) at ${now}`);
 
-    return NextResponse.json({
-      ok: true,
-      deleted: deletedCount,
-      timestamp: now,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        deleted: deletedCount,
+        timestamp: now,
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0',
+        },
+      }
+    );
   } catch (err) {
     console.error('Cleanup route error:', err);
     return NextResponse.json(
