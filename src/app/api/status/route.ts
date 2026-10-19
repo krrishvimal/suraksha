@@ -11,13 +11,20 @@ const PIN_PEPPER = process.env.PIN_PEPPER || 'suraksha-secure-pepper-v1-static-s
 
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    (process.env.NODE_ENV !== 'production' ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY : '');
 
   if (!url || !key) {
-    throw new Error('Missing Supabase environment variables');
+    throw new Error('Missing Supabase service role environment variables');
   }
 
-  return createClient(url, key);
+  return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
 }
 
 // ─── Ephemeral In-Memory Client Rate Limiting Store ─────────────────────────
@@ -67,7 +74,7 @@ function getClientIdentifier(request: Request): string {
   const forwarded = request.headers.get('x-forwarded-for');
   const realIp = request.headers.get('x-real-ip');
   const cfIp = request.headers.get('cf-connecting-ip');
-  return cfIp || (forwarded ? forwarded.split(',')[0].trim() : '') || realIp || 'unknown';
+  return cfIp || realIp || (forwarded ? forwarded.split(',')[0].trim() : '') || 'unknown';
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -77,7 +84,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (!body || typeof body !== 'object') {
       return NextResponse.json(
         { error: 'Invalid request body / अमान्य अनुरोध' },
-        { status: 400 }
+        { status: 400, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
 
 /**
  * GET /api/cleanup
@@ -13,27 +14,52 @@ import { createClient } from '@supabase/supabase-js';
 
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    (process.env.NODE_ENV !== 'production' ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY : '');
 
   if (!url || !key) {
-    throw new Error('Missing Supabase environment variables');
+    throw new Error('Missing Supabase service role environment variables');
   }
 
-  return createClient(url, key);
+  return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
 }
 
 export async function GET(request: Request): Promise<NextResponse> {
   try {
-    // Verify the request is from Vercel Cron (or has the right secret)
     const authHeader = request.headers.get('authorization');
     const cronSecret = process.env.CRON_SECRET;
 
-    // If CRON_SECRET is set, require it. Otherwise allow (for local testing).
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    // In production, CRON_SECRET is strictly required
+    if (process.env.NODE_ENV === 'production' && !cronSecret) {
+      console.error('[Cleanup] CRON_SECRET must be configured in production environment');
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: 'Server misconfiguration: CRON_SECRET is required' },
+        { status: 500, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
+    }
+
+    if (cronSecret) {
+      const expected = `Bearer ${cronSecret}`;
+      const headerVal = authHeader || '';
+      const headerBuf = Buffer.from(headerVal);
+      const expectedBuf = Buffer.from(expected);
+
+      // Constant-time comparison prevents side-channel timing leaks
+      if (
+        headerBuf.length !== expectedBuf.length ||
+        !crypto.timingSafeEqual(headerBuf, expectedBuf)
+      ) {
+        return NextResponse.json(
+          { error: 'Unauthorized' },
+          { status: 401, headers: { 'Cache-Control': 'no-store, max-age=0' } }
+        );
+      }
     }
 
     const supabase = getSupabaseAdmin();
@@ -49,7 +75,7 @@ export async function GET(request: Request): Promise<NextResponse> {
       console.error('Cleanup error:', error);
       return NextResponse.json(
         { error: 'Cleanup failed', details: error.message },
-        { status: 500 }
+        { status: 500, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
@@ -68,11 +94,19 @@ export async function GET(request: Request): Promise<NextResponse> {
         },
       }
     );
-  } catch (err) {
+  } catch (err: unknown) {
+    if (
+      typeof err === 'object' &&
+      err !== null &&
+      'digest' in err &&
+      (err as { digest?: string }).digest === 'NEXT_PRERENDER_INTERRUPTED'
+    ) {
+      throw err;
+    }
     console.error('Cleanup route error:', err);
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status: 500, headers: { 'Cache-Control': 'no-store, max-age=0' } }
     );
   }
 }

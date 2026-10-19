@@ -28,8 +28,16 @@ export function isValidGoogleMapsUrl(url: string | null | undefined): url is str
 
     // Whitelist Google Maps hosts only
     const validHosts = ['maps.google.com', 'www.google.com', 'google.com'];
-    if (!validHosts.includes(parsed.hostname.toLowerCase())) {
+    const host = parsed.hostname.toLowerCase();
+    if (!validHosts.includes(host)) {
       return false;
+    }
+
+    // On google.com or www.google.com, ensure pathname targets Google Maps specifically
+    if (host === 'google.com' || host === 'www.google.com') {
+      if (parsed.pathname !== '/maps' && !parsed.pathname.startsWith('/maps/')) {
+        return false;
+      }
     }
 
     // Must be a query targeting coordinates
@@ -71,4 +79,12 @@ export function sanitizeUserMessage(raw: string | null | undefined): string | nu
 export function isValidPasscode(passcode: string | null | undefined): passcode is string {
   if (!passcode || typeof passcode !== 'string') return false;
   return /^\d{4}$/.test(passcode);
+}
+
+/**
+ * Validates standard canonical UUID v4 format to prevent SQL syntax errors or query fuzzing.
+ */
+export function isValidUuid(uuid: string | null | undefined): uuid is string {
+  if (!uuid || typeof uuid !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid.trim());
 }

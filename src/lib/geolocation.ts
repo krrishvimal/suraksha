@@ -108,10 +108,26 @@ export function getCurrentPosition(): Promise<Coordinates> {
 }
 
 /**
- * Build a Google Maps link from latitude and longitude.
+ * Build a verified, coordinate-sanitized Google Maps link from latitude and longitude.
+ * Validates finite numerical bounds (lat: [-90, 90], lng: [-180, 180]) to prevent
+ * query parameter injection, NaN errors, or URL distortion.
  */
 export function getGoogleMapsLink(lat: number, lng: number): string {
-  return `https://www.google.com/maps?q=${lat},${lng}`;
+  if (
+    typeof lat !== 'number' ||
+    typeof lng !== 'number' ||
+    Number.isNaN(lat) ||
+    Number.isNaN(lng) ||
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng)
+  ) {
+    throw new Error('Invalid coordinate numbers / अमान्य निर्देशांक संख्याएं');
+  }
+
+  const safeLat = Math.max(-90, Math.min(90, lat));
+  const safeLng = Math.max(-180, Math.min(180, lng));
+
+  return `https://www.google.com/maps?q=${safeLat.toFixed(6)},${safeLng.toFixed(6)}`;
 }
 
 /**
