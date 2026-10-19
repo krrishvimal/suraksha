@@ -21,6 +21,50 @@ function isExpired(expiresAt: string | null): boolean {
   return new Date(expiresAt).getTime() < Date.now();
 }
 
+// ─── Brute-Force Rate Limiting Store ──────────────────────────────────────────
+
+interface FailedAttemptRecord {
+  count: number;
+  lockedUntil: number;
+}
+
+const failedAttemptsMap = new Map<string, FailedAttemptRecord>();
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes lockout
+
+function checkBruteForceLock(uuid: string): { isLocked: boolean; remainingMinutes: number } {
+  const record = failedAttemptsMap.get(uuid);
+  if (!record) return { isLocked: false, remainingMinutes: 0 };
+
+  const now = Date.now();
+  if (record.lockedUntil > now) {
+    const remainingMinutes = Math.ceil((record.lockedUntil - now) / 60000);
+    return { isLocked: true, remainingMinutes };
+  }
+
+  if (record.lockedUntil > 0 && record.lockedUntil <= now) {
+    failedAttemptsMap.delete(uuid);
+  }
+
+  return { isLocked: false, remainingMinutes: 0 };
+}
+
+function recordFailedAttempt(uuid: string): void {
+  const now = Date.now();
+  const record = failedAttemptsMap.get(uuid) || { count: 0, lockedUntil: 0 };
+  record.count += 1;
+
+  if (record.count >= MAX_FAILED_ATTEMPTS) {
+    record.lockedUntil = now + LOCKOUT_DURATION_MS;
+  }
+
+  failedAttemptsMap.set(uuid, record);
+}
+
+function clearFailedAttempts(uuid: string): void {
+  failedAttemptsMap.delete(uuid);
+}
+
 // ─── GET: Fetch status page by UUID ───────────────────────────────────────────
 
 export async function GET(
@@ -152,14 +196,29 @@ export async function PATCH(
       );
     }
 
+    // Brute-force protection: check if UUID is temporarily locked out
+    const lock = checkBruteForceLock(uuid);
+    if (lock.isLocked) {
+      return NextResponse.json(
+        {
+          error: `Too many incorrect passcode attempts. Locked for ${lock.remainingMinutes} minutes. / अत्यधिक गलत प्रयास। ${lock.remainingMinutes} मिनट के लिए लॉक किया गया।`,
+        },
+        { status: 429 }
+      );
+    }
+
     // Verify passcode
     const isValid = await bcrypt.compare(passcode, existingRow.passcode_hash);
     if (!isValid) {
+      recordFailedAttempt(uuid);
       return NextResponse.json(
         { error: 'Incorrect passcode / गलत पासकोड' },
         { status: 401 }
       );
     }
+
+    // Success — clear any failed attempts
+    clearFailedAttempts(uuid);
 
     // Build update payload
     const updatePayload: Record<string, string | null> = {};
@@ -271,14 +330,29 @@ export async function DELETE(
 
     const existingRow = existing as { id: string; passcode_hash: string };
 
+    // Brute-force protection: check if UUID is temporarily locked out
+    const lock = checkBruteForceLock(uuid);
+    if (lock.isLocked) {
+      return NextResponse.json(
+        {
+          error: `Too many incorrect passcode attempts. Locked for ${lock.remainingMinutes} minutes. / अत्यधिक गलत प्रयास। ${lock.remainingMinutes} मिनट के लिए लॉक किया गया।`,
+        },
+        { status: 429 }
+      );
+    }
+
     // Verify passcode
     const isValid = await bcrypt.compare(passcode, existingRow.passcode_hash);
     if (!isValid) {
+      recordFailedAttempt(uuid);
       return NextResponse.json(
         { error: 'Incorrect passcode / गलत पासकोड' },
         { status: 401 }
       );
     }
+
+    // Success — clear any failed attempts
+    clearFailedAttempts(uuid);
 
     const { error: deleteError } = await supabase
       .from('status_pages')

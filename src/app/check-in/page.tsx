@@ -417,6 +417,65 @@ function ActiveSession({
   const queuedActionRef = useRef<QueuedAction | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Screen Wake Lock API (keeps screen awake during tense cab / travel rides)
+  const [wakeLockEnabled, setWakeLockEnabled] = useState(true);
+  const [isWakeLockSupported, setIsWakeLockSupported] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const wakeLockRef = useRef<any>(null);
+
+  useEffect(() => {
+    setIsWakeLockSupported(typeof navigator !== 'undefined' && 'wakeLock' in navigator);
+  }, []);
+
+  const requestWakeLock = useCallback(async () => {
+    if (typeof navigator === 'undefined' || !('wakeLock' in navigator)) return;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+    } catch {
+      // Ignore if denied or unsupported
+    }
+  }, []);
+
+  const releaseWakeLock = useCallback(() => {
+    if (wakeLockRef.current) {
+      wakeLockRef.current.release().catch(() => {});
+      wakeLockRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!statusData || statusData.status === 'need_help' || !wakeLockEnabled) {
+      releaseWakeLock();
+      return;
+    }
+
+    requestWakeLock();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && wakeLockEnabled) {
+        requestWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      releaseWakeLock();
+    };
+  }, [statusData, wakeLockEnabled, requestWakeLock, releaseWakeLock]);
+
+  // Load any persisted offline queue on mount
+  useEffect(() => {
+    const persisted = getItem<QueuedAction>(StorageKeys.QUEUED_CHECKIN);
+    if (persisted) {
+      queuedActionRef.current = persisted;
+      setLastAction(
+        t('queuedOffline', 'ऑफ़लाइन कतार में सहेजा गया — ऑनलाइन होने पर भेजा जाएगा', 'Queued offline — will send when online')
+      );
+    }
+  }, [t]);
+
   const handleIntervalChange = (mins: number) => {
     setIntervalMinutes(mins);
     setItem(StorageKeys.CHECKIN_INTERVAL, mins);
@@ -549,10 +608,12 @@ function ActiveSession({
 
   // Process queued action when coming back online
   useEffect(() => {
-    if (isOnline && queuedActionRef.current) {
-      const queued = queuedActionRef.current;
+    const persisted = getItem<QueuedAction>(StorageKeys.QUEUED_CHECKIN);
+    const actionToRun = queuedActionRef.current || persisted;
+    if (isOnline && actionToRun) {
       queuedActionRef.current = null;
-      handleCheckIn(queued.status, queued.message, queued.location_link);
+      removeItem(StorageKeys.QUEUED_CHECKIN);
+      handleCheckIn(actionToRun.status, actionToRun.message, actionToRun.location_link);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOnline]);
@@ -589,18 +650,20 @@ function ActiveSession({
         }
       }
 
-      // If offline, queue the action
+      // If offline, queue the action and persist it in localStorage
       if (!isOnline) {
-        queuedActionRef.current = {
+        const action: QueuedAction = {
           type: 'checkin',
           status,
           message: msg || message,
           location_link: freshLoc,
           timestamp: Date.now(),
         };
+        queuedActionRef.current = action;
+        setItem(StorageKeys.QUEUED_CHECKIN, action);
         setIsCheckingIn(false);
         setLastAction(
-          t('queuedOffline', 'ऑफ़लाइन कतार में जोड़ा गया — ऑनलाइन होने पर भेजा जाएगा', 'Queued offline — will send when online')
+          t('queuedOffline', 'ऑफ़लाइन कतार में सहेजा गया — ऑनलाइन होने पर भेजा जाएगा', 'Queued offline — will send when online')
         );
         return;
       }
@@ -639,6 +702,8 @@ function ActiveSession({
 
         setStatusData(data);
         setMessage('');
+        removeItem(StorageKeys.QUEUED_CHECKIN);
+        queuedActionRef.current = null;
         setLastAction(
           status === 'safe'
             ? t('markedSafe', '✅ सुरक्षित चिह्नित किया गया — लाइव GPS अपडेट हुआ', '✅ Marked as Safe — Live GPS updated')
@@ -708,7 +773,7 @@ function ActiveSession({
   const handleWhatsAppShare = () => {
     const text = t(
       'whatsappMsgWithInterval',
-      `मेरी सुरक्षा स्थिति लाइव ट्रैक करें: ${shareUrl}\n(सफ़र सुरक्षा: अगर मैं हर ${intervalMinutes} मिनट में चेक-इन नहीं करती हूँ, तो इस लिंक पर इमरजेंसी अलार्म और मेरा आखिरी GPS स्थान सक्रिय हो जाएगा)`,
+      `मेरी सुरक्षा स्थिति लाइव ट्रैक करें: ${shareUrl}\n(सफ़र सुरक्षा: अगर हर ${intervalMinutes} मिनट में चेक-इन न किया गया, तो इस लिंक पर इमरजेंसी अलार्म और मेरा आखिरी GPS स्थान सक्रिय हो जाएगा)`,
       `Track my safety status live: ${shareUrl}\n(Safety Timer: If I don't check in every ${intervalMinutes} minutes, an emergency alert will trigger with my last recorded GPS coordinates)`
     );
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
@@ -860,6 +925,26 @@ function ActiveSession({
               {t('ago', 'पहले', 'ago')}
             </span>
           </div>
+
+          {/* Screen Wake Lock Toggle (Cab / Travel Mode) */}
+          <div className="mt-3 flex items-center justify-center">
+            <button
+              type="button"
+              onClick={() => setWakeLockEnabled((prev) => !prev)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-medium transition-colors ${
+                wakeLockEnabled && isWakeLockSupported
+                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                  : 'border-neutral-800 bg-neutral-900 text-neutral-500'
+              }`}
+            >
+              <span>{wakeLockEnabled && isWakeLockSupported ? '🔆' : '🌙'}</span>
+              <span>
+                {wakeLockEnabled && isWakeLockSupported
+                  ? t('screenAwakeActive', 'स्क्रीन चालू रहेगी (कैब सुरक्षा)', 'Screen Kept Awake (Cab Mode)')
+                  : t('keepScreenAwake', 'स्क्रीन चालू रखें (टैप करें)', 'Keep Screen Awake')}
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Safety Timer Selector (Dead Man's Switch Interval) */}
@@ -874,7 +959,7 @@ function ActiveSession({
           <p className="text-xs text-neutral-400 mb-3 leading-relaxed">
             {t(
               'timerExplainer',
-              'यदि आप इस समय सीमा के भीतर चेक-इन नहीं करती हैं, तो यह सिस्टम स्वतः ही आपके संपर्कों को लाल खतरे का अलार्म और अंतिम GPS स्थान दिखा देगा।',
+              'यदि इस समय सीमा के भीतर चेक-इन न किया गया, तो यह सिस्टम स्वतः ही संपर्कों को लाल खतरे का अलार्म और अंतिम GPS स्थान दिखा देगा।',
               'If you fail to check in within this time, the system automatically triggers a red emergency alarm with your last GPS location.'
             )}
           </p>

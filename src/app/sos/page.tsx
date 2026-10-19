@@ -449,6 +449,43 @@ export default function SOSPage() {
           defaultExpanded={false}
         />
 
+        {/* ===== NATIONAL HELPLINES SPEED DIAL ===== */}
+        <section className="rounded-2xl border border-red-500/25 bg-gradient-to-r from-red-950/30 via-neutral-900/40 to-neutral-900/40 p-3.5">
+          <div className="flex items-center justify-between mb-2.5">
+            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-red-400">
+              <PhoneCall className="h-3.5 w-3.5" />
+              <span>{t('helplines_speed_dial', 'Immediate Helplines • 1-Tap Call / राष्ट्रीय हेल्पलाइन')}</span>
+            </h3>
+            <span className="text-[10px] text-neutral-500 font-mono">Toll-Free • 24/7</span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <a
+              href="tel:112"
+              className="flex flex-col items-center justify-center gap-1 p-2.5 rounded-xl bg-red-600 text-white font-bold transition-all hover:bg-red-500 active:scale-95 shadow-md shadow-red-950/40 text-center"
+            >
+              <span className="text-base font-extrabold tracking-tight">🚨 112</span>
+              <span className="text-[10px] opacity-90 leading-tight">Emergency / पुलिस</span>
+            </a>
+
+            <a
+              href="tel:1091"
+              className="flex flex-col items-center justify-center gap-1 p-2.5 rounded-xl bg-purple-700 text-white font-bold transition-all hover:bg-purple-600 active:scale-95 shadow-md shadow-purple-950/40 text-center"
+            >
+              <span className="text-base font-extrabold tracking-tight">🚺 1091</span>
+              <span className="text-[10px] opacity-90 leading-tight">Women / महिला</span>
+            </a>
+
+            <a
+              href="tel:108"
+              className="flex flex-col items-center justify-center gap-1 p-2.5 rounded-xl bg-blue-600 text-white font-bold transition-all hover:bg-blue-500 active:scale-95 shadow-md shadow-blue-950/40 text-center"
+            >
+              <span className="text-base font-extrabold tracking-tight">🚑 108</span>
+              <span className="text-[10px] opacity-90 leading-tight">Ambulance / एम्बुलेंस</span>
+            </a>
+          </div>
+        </section>
+
         {/* ===== CONTACTS SECTION ===== */}
         <section>
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">

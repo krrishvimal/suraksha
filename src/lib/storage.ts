@@ -12,6 +12,7 @@ export enum StorageKeys {
   CHECKIN_UUID = 'suraksha_checkin_uuid',
   CHECKIN_PASSCODE = 'suraksha_checkin_passcode',
   CHECKIN_INTERVAL = 'suraksha_checkin_interval',
+  QUEUED_CHECKIN = 'suraksha_queued_checkin',
   LANGUAGE = 'suraksha_language',
 }
 
